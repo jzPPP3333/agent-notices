@@ -135,16 +135,15 @@ function installClaude(configPath, opts) {
   if (!json.hooks || typeof json.hooks !== 'object') json.hooks = {};
 
   const events = [
-    { key: 'UserPromptSubmit', matcher: '', cmd: buildHookCommand('claude', '--event UserPromptSubmit', opts), timeout: 5 },
-    { key: 'Stop', matcher: '', cmd: buildHookCommand('claude', '--event Stop', opts), timeout: 10 },
-    { key: 'Notification', matcher: '', cmd: buildHookCommand('claude', '--event Notification', opts), timeout: 10 },
+    { key: 'UserPromptSubmit', includeMatcher: false, cmd: buildHookCommand('claude', '--event UserPromptSubmit', opts), timeout: 5 },
+    { key: 'Stop', includeMatcher: false, cmd: buildHookCommand('claude', '--event Stop', opts), timeout: 10 },
+    { key: 'Notification', includeMatcher: true, matcher: '', cmd: buildHookCommand('claude', '--event Notification', opts), timeout: 10 },
   ];
 
   for (const ev of events) {
     const existing = Array.isArray(json.hooks[ev.key]) ? json.hooks[ev.key] : [];
     const filtered = existing.filter((item) => !isClaudeHookEntryOurs(item));
-    filtered.push({
-      matcher: ev.matcher,
+    const entry = {
       hooks: [
         {
           type: 'command',
@@ -152,7 +151,11 @@ function installClaude(configPath, opts) {
           timeout: ev.timeout,
         },
       ],
-    });
+    };
+    if (ev.includeMatcher) {
+      entry.matcher = ev.matcher;
+    }
+    filtered.push(entry);
     json.hooks[ev.key] = filtered;
   }
 

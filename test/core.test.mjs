@@ -156,6 +156,35 @@ test('adapters parse Antigravity, Claude Code, Codex, and Cursor payloads', () =
   });
   assert.equal(ccLoop.event, null);
 
+  // Claude Desktop (claude-desktop-3p) entrypoint resolution + sidechain subagent filtering
+  const ccDesktopTranscript = path.join(tmpRoot, 'cc-desktop.jsonl');
+  fs.writeFileSync(
+    ccDesktopTranscript,
+    JSON.stringify({
+      type: 'assistant',
+      entrypoint: 'claude-desktop-3p',
+      isSidechain: false,
+      message: { content: [{ type: 'text', text: '扩展已完成并打包成功。' }] },
+    }) + '\n'
+  );
+  const ccDesktopStop = adaptHookEvent('claude', {
+    hook_event_name: 'Stop',
+    session_id: 's-desk',
+    cwd: '/Users/dev/tg_cn',
+    transcript_path: ccDesktopTranscript,
+  }, { env: {} });
+  assert.equal(ccDesktopStop.event.focusTarget.appName, 'Claude');
+  assert.equal(ccDesktopStop.event.focusTarget.bundleId, 'com.anthropic.claudefordesktop');
+  assert.equal(ccDesktopStop.event.isSubagent, false);
+  assert.match(ccDesktopStop.event.assistantText, /扩展已完成/);
+
+  const ccSub = adaptHookEvent('claude', {
+    hook_event_name: 'SubagentStop',
+    session_id: 's-desk',
+    cwd: '/Users/dev/tg_cn',
+  });
+  assert.equal(ccSub.event.isSubagent, true);
+
   // Codex CLI
   const codex = adaptHookEvent('codex', {
     type: 'agent-turn-complete',

@@ -117,6 +117,51 @@ export function readTranscriptTail(transcriptPath) {
 }
 
 /**
+ * Extract structured info from a Claude Code JSONL transcript tail:
+ * latest non-sidechain assistant text, entrypoint (e.g. "claude-desktop-3p"), and sidechain flag.
+ */
+export function extractClaudeTranscriptInfo(transcriptPath) {
+  const entries = readTranscriptTail(transcriptPath);
+  let text = '';
+  let entrypoint = '';
+  let sawAny = false;
+  let allSidechain = true;
+
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (!entry || typeof entry !== 'object') continue;
+    sawAny = true;
+
+    if (!entrypoint && typeof entry.entrypoint === 'string' && entry.entrypoint.trim()) {
+      entrypoint = entry.entrypoint.trim();
+    }
+    if (entry.isSidechain !== true) {
+      allSidechain = false;
+    }
+
+    if (!text && entry.type === 'assistant' && entry.message && entry.isSidechain !== true) {
+      const content = entry.message.content;
+      if (typeof content === 'string' && content.trim()) {
+        text = content.trim();
+      } else if (Array.isArray(content)) {
+        const texts = content
+          .filter((blk) => blk && blk.type === 'text' && typeof blk.text === 'string' && blk.text.trim())
+          .map((blk) => blk.text.trim());
+        if (texts.length > 0) {
+          text = texts.join('\n');
+        }
+      }
+    }
+  }
+
+  return {
+    text,
+    entrypoint,
+    isSidechain: sawAny && allSidechain,
+  };
+}
+
+/**
  * Extract the latest assistant text message from Antigravity or Claude Code transcript JSONL.
  */
 export function extractLastAssistantText(transcriptPath) {
