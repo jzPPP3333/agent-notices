@@ -335,16 +335,23 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         let item = historyCache[idx]
         runCLI(["history", "read-all"])
         if let bundleId = item.focusTarget?.bundleId, !bundleId.isEmpty {
-            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
-            if let app = apps.first {
-                _ = app.activate()
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            proc.arguments = ["-b", bundleId]
+            try? proc.run()
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
+                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
             }
         } else if let appName = item.focusTarget?.appName, !appName.isEmpty {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            proc.arguments = ["-a", appName]
+            try? proc.run()
             let apps = NSWorkspace.shared.runningApplications.filter {
                 $0.localizedName?.caseInsensitiveCompare(appName) == .orderedSame
             }
             if let app = apps.first {
-                _ = app.activate()
+                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in

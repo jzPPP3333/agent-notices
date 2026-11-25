@@ -220,6 +220,18 @@ final class CircularCountdownButton: NSView {
         tracking = area
     }
 
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return bounds.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         hoverBgLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.14).cgColor
@@ -242,6 +254,8 @@ final class AmbientGlowView: NSView {
     var glowColor: NSColor = .systemGreen {
         didSet { needsDisplay = true }
     }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
@@ -272,18 +286,84 @@ final class PillButton: NSButton {
     var borderCol: NSColor? = nil
     var topHighlight: Bool = false
     var corner: CGFloat = 10
+    private var isPointerInside: Bool = false
+    private var isPressed: Bool = false
+    private var hoverArea: NSTrackingArea?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
+        needsDisplay = true
+    }
+
+    // Explicitly track mouse clicks so single-click always fires reliably inside a non-activating NSPanel
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        isPressed = true
+        needsDisplay = true
+
+        var inside = true
+        window?.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: 15.0, mode: .eventTracking) { nextEvent, stop in
+            guard let nextEvent else { return }
+            let loc = self.convert(nextEvent.locationInWindow, from: nil)
+            inside = self.bounds.contains(loc)
+            if self.isPressed != inside {
+                self.isPressed = inside
+                self.needsDisplay = true
+            }
+            if nextEvent.type == .leftMouseUp {
+                stop.pointee = true
+            }
+        }
+
+        isPressed = false
+        needsDisplay = true
+
+        if inside, let action {
+            NSApp.sendAction(action, to: target, from: self)
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let insetRect = bounds.insetBy(dx: 0.5, dy: 0.5)
         let path = NSBezierPath(roundedRect: insetRect, xRadius: corner, yRadius: corner)
+        let activePress = isPressed || isHighlighted
 
         if let bottomCol = gradientBottomColor {
-            let topCol = isHighlighted ? bgColor.blended(withFraction: 0.16, of: .black) ?? bgColor : bgColor
-            let botCol = isHighlighted ? bottomCol.blended(withFraction: 0.16, of: .black) ?? bottomCol : bottomCol
+            let topBase = isPointerInside ? (bgColor.blended(withFraction: 0.12, of: .white) ?? bgColor) : bgColor
+            let botBase = isPointerInside ? (bottomCol.blended(withFraction: 0.12, of: .white) ?? bottomCol) : bottomCol
+            let topCol = activePress ? (topBase.blended(withFraction: 0.20, of: .black) ?? topBase) : topBase
+            let botCol = activePress ? (botBase.blended(withFraction: 0.20, of: .black) ?? botBase) : botBase
             let grad = NSGradient(starting: botCol, ending: topCol)
             grad?.draw(in: path, angle: 90)
         } else {
-            let fill = isHighlighted ? bgColor.blended(withFraction: 0.18, of: .black) ?? bgColor : bgColor
+            let base = isPointerInside ? (bgColor.blended(withFraction: 0.10, of: .white) ?? bgColor) : bgColor
+            let fill = activePress ? (base.blended(withFraction: 0.20, of: .black) ?? base) : base
             fill.setFill()
             path.fill()
         }
@@ -557,7 +637,7 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = true
         panel.level = style == "modal" ? .statusBar : .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
         if let appearance = resolveAppearance() {
             panel.appearance = appearance
@@ -1373,22 +1453,46 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         let appName = payload.focusAppName ?? ""
         let hint = payload.focusWindowHint ?? ""
 
-        var activated = false
+        // 1. Primary activation via LaunchServices (`open -b` / `open -a`), which reliably
+        //    brings the target app to the foreground across Spaces even from a non-activating accessory panel on macOS 14+.
         if !bundleId.isEmpty {
-            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
-            if let app = apps.first {
-                activated = app.activate()
-            }
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            proc.arguments = ["-b", bundleId]
+            proc.standardOutput = Pipe()
+            proc.standardError = Pipe()
+            try? proc.run()
+            proc.waitUntilExit()
+        } else if !appName.isEmpty {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            proc.arguments = ["-a", appName]
+            proc.standardOutput = Pipe()
+            proc.standardError = Pipe()
+            try? proc.run()
+            proc.waitUntilExit()
         }
-        if !activated && !appName.isEmpty {
+
+        // 2. Fallback / reinforcement via NSWorkspace & NSRunningApplication
+        if !bundleId.isEmpty {
+            if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+                let cfg = NSWorkspace.OpenConfiguration()
+                cfg.activates = true
+                NSWorkspace.shared.openApplication(at: appURL, configuration: cfg, completionHandler: nil)
+            }
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
+                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            }
+        } else if !appName.isEmpty {
             let apps = NSWorkspace.shared.runningApplications.filter {
                 $0.localizedName?.caseInsensitiveCompare(appName) == .orderedSame
             }
             if let app = apps.first {
-                activated = app.activate()
+                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
             }
         }
 
+        // 3. Best-effort raise of the specific workspace window matching windowHint
         if !hint.isEmpty && !appName.isEmpty {
             let safeApp = appName.replacingOccurrences(of: "\"", with: "\\\"")
             let safeHint = hint.replacingOccurrences(of: "\"", with: "\\\"")
