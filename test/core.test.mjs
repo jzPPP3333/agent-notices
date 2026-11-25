@@ -188,11 +188,11 @@ test('policy engine handles thresholds, escalation, sticky urgent, focus downgra
   assert.equal(pShort.shouldNotify, false);
   assert.equal(pShort.reason, 'below_min_duration');
 
-  // Short error task -> bypasses threshold and escalates with sticky
+  // Short error task -> bypasses threshold and escalates with sticky (defaults to right-edge card)
   const pErr = evaluatePolicy({ kind: 'error', durationMs: 1000, canceled: false }, cfg);
   assert.equal(pErr.shouldNotify, true);
   assert.equal(pErr.tier, 'escalated');
-  assert.equal(pErr.channels.popup.style, 'modal');
+  assert.equal(pErr.channels.popup.style, 'card');
   assert.equal(pErr.channels.popup.sticky, true);
 
   // Medium task -> normal card (default pill variant)
@@ -208,11 +208,15 @@ test('policy engine handles thresholds, escalation, sticky urgent, focus downgra
   const pGlass = evaluatePolicy({ kind: 'done', durationMs: 15_000, canceled: false }, cfg);
   assert.equal(pGlass.channels.popup.cardVariant, 'glass');
 
-  // Long task -> escalated modal
+  // Long task -> escalated card by default, or modal when explicitly opted in
   const pLong = evaluatePolicy({ kind: 'done', durationMs: 45_000, canceled: false }, cfg);
   assert.equal(pLong.shouldNotify, true);
   assert.equal(pLong.tier, 'escalated');
-  assert.equal(pLong.channels.popup.style, 'modal');
+  assert.equal(pLong.channels.popup.style, 'card');
+
+  cfg.popup.escalatedStyle = 'modal';
+  const pLongModal = evaluatePolicy({ kind: 'done', durationMs: 45_000, canceled: false }, cfg);
+  assert.equal(pLongModal.channels.popup.style, 'modal');
 
   // Focused downgrade
   cfg.policy.whenTargetFocused = 'downgrade';

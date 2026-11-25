@@ -25,7 +25,8 @@ export const DEFAULT_CONFIG = {
     style: 'card',
     // "pill" (compact dynamic pill, default) | "glass" (Apple liquid glass)
     cardVariant: 'pill',
-    escalatedStyle: 'modal',
+    // Keep escalated alerts sliding from the right as cards by default; users can opt into "modal"
+    escalatedStyle: 'card',
     // "top-right" | "bottom-right" | "top-center" | "center"
     position: 'top-right',
     durationSeconds: 10,
