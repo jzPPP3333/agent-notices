@@ -1481,14 +1481,14 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
                 NSWorkspace.shared.openApplication(at: appURL, configuration: cfg, completionHandler: nil)
             }
             if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                _ = app.activate(options: .activateAllWindows)
             }
         } else if !appName.isEmpty {
             let apps = NSWorkspace.shared.runningApplications.filter {
                 $0.localizedName?.caseInsensitiveCompare(appName) == .orderedSame
             }
             if let app = apps.first {
-                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                _ = app.activate(options: .activateAllWindows)
             }
         }
 

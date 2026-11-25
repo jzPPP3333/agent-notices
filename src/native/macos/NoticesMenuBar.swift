@@ -340,7 +340,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             proc.arguments = ["-b", bundleId]
             try? proc.run()
             if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                _ = app.activate(options: .activateAllWindows)
             }
         } else if let appName = item.focusTarget?.appName, !appName.isEmpty {
             let proc = Process()
@@ -351,7 +351,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
                 $0.localizedName?.caseInsensitiveCompare(appName) == .orderedSame
             }
             if let app = apps.first {
-                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                _ = app.activate(options: .activateAllWindows)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
