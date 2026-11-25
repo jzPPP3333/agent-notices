@@ -438,6 +438,14 @@
             <label class="switch"><input type="checkbox" id="cfg-policy-ignoreUserCanceled"><span class="slider"></span></label>
           </div>
           <div class="row">
+            <div><label>忽略子代理 / 内部小任务</label><small>自动过滤 image-generator / browser / research 等子代理完成回调</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-policy-ignoreSubagents"><span class="slider"></span></label>
+          </div>
+          <div class="row">
+            <div><label>等全部后台任务完成后再提醒</label><small>主会话中途暂停等待后台任务或子代理时静默并保留总耗时计时</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-policy-waitForFullyIdle"><span class="slider"></span></label>
+          </div>
+          <div class="row">
             <div><label>正在使用目标 IDE 时的策略</label><small>检测前台应用就是当前触发工具时</small></div>
             <select id="cfg-policy-whenTargetFocused">
               <option value="never">照常提醒</option>
@@ -693,6 +701,8 @@
       document.getElementById('cfg-policy-minDurationSeconds').value = c.policy.minDurationSeconds ?? 5;
       document.getElementById('cfg-policy-escalateDurationSeconds').value = c.policy.escalateDurationSeconds ?? 30;
       document.getElementById('cfg-policy-ignoreUserCanceled').checked = c.policy.ignoreUserCanceled !== false;
+      document.getElementById('cfg-policy-ignoreSubagents').checked = c.policy.ignoreSubagents !== false;
+      document.getElementById('cfg-policy-waitForFullyIdle').checked = c.policy.waitForFullyIdle !== false;
       document.getElementById('cfg-policy-whenTargetFocused').value = c.policy.whenTargetFocused || 'never';
       document.getElementById('cfg-quiet-enabled').checked = Boolean(c.quietHours?.enabled);
       document.getElementById('cfg-quiet-start').value = c.quietHours?.start || '23:00';
@@ -728,6 +738,8 @@
       c.policy.minDurationSeconds = Number(document.getElementById('cfg-policy-minDurationSeconds').value || 0);
       c.policy.escalateDurationSeconds = Number(document.getElementById('cfg-policy-escalateDurationSeconds').value || 0);
       c.policy.ignoreUserCanceled = document.getElementById('cfg-policy-ignoreUserCanceled').checked;
+      c.policy.ignoreSubagents = document.getElementById('cfg-policy-ignoreSubagents').checked;
+      c.policy.waitForFullyIdle = document.getElementById('cfg-policy-waitForFullyIdle').checked;
       c.policy.whenTargetFocused = document.getElementById('cfg-policy-whenTargetFocused').value;
       c.quietHours.enabled = document.getElementById('cfg-quiet-enabled').checked;
       c.quietHours.start = document.getElementById('cfg-quiet-start').value;

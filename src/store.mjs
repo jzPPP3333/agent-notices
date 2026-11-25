@@ -55,19 +55,40 @@ export function markTurnStart(sessionKey, { reset = false, metadata = {} } = {},
   const state = readState();
   pruneOldEntries(state.sessions, SESSION_TTL_MS, nowMs);
   const existing = state.sessions[sessionKey];
-  if (reset || !existing || !existing.startedAt) {
+  // If the session paused mid-task waiting for background tasks/subagents, keep original startedAt
+  const shouldKeepExistingStart = Boolean(existing?.startedAt && existing?.waitingBackground);
+  if ((reset && !shouldKeepExistingStart) || !existing || !existing.startedAt) {
     state.sessions[sessionKey] = {
       startedAt: nowMs,
       updatedAt: nowMs,
+      waitingBackground: false,
       ...metadata,
     };
   } else {
     state.sessions[sessionKey] = {
       ...existing,
       ...metadata,
+      waitingBackground: false,
       updatedAt: nowMs,
     };
   }
+  writeState(state);
+}
+
+/**
+ * Mark an ongoing session as waiting on background tasks/subagents so its turn timer persists
+ * across intermediate pauses until the final fullyIdle completion.
+ */
+export function markTurnWaitingBackground(sessionKey, nowMs = Date.now()) {
+  if (!sessionKey) return;
+  const state = readState();
+  const existing = state.sessions[sessionKey];
+  if (!existing) return;
+  state.sessions[sessionKey] = {
+    ...existing,
+    waitingBackground: true,
+    updatedAt: nowMs,
+  };
   writeState(state);
 }
 

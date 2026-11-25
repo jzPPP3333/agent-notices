@@ -15,6 +15,8 @@ export const DEFAULT_CONFIG = {
     minDurationSeconds: 5,
     escalateDurationSeconds: 30,
     ignoreUserCanceled: true,
+    ignoreSubagents: true,
+    waitForFullyIdle: true,
     // "never" | "downgrade" | "suppress"
     whenTargetFocused: 'never',
     dedupeWindowMs: 3000,

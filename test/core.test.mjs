@@ -14,7 +14,7 @@ const CLI_PATH = path.resolve(__dirname, '../bin/agent-notices.mjs');
 
 const { DEFAULT_CONFIG, isDndActive, isWithinQuietHours, loadConfig, saveConfig, setDnd } = await import('../src/config.mjs');
 const { appendHistory, checkAndRecordDedupe, clearHistory, consumeTurnDuration, formatDuration, getUnreadCount, markAllRead, markTurnStart, readHistory } = await import('../src/store.mjs');
-const { cleanText, extractLastAssistantText } = await import('../src/summary.mjs');
+const { cleanText, extractLastAssistantText, isAntigravitySubagentTranscript } = await import('../src/summary.mjs');
 const { evaluatePolicy } = await import('../src/policy.mjs');
 const { adaptHookEvent } = await import('../src/adapters/index.mjs');
 const { buildDingTalkRequest, buildFeishuPayload, buildWeComPayload } = await import('../src/channels/webhook.mjs');
@@ -230,6 +230,77 @@ test('policy engine handles thresholds, escalation, sticky urgent, focus downgra
   const pCancel = evaluatePolicy({ kind: 'info', durationMs: 60_000, canceled: true }, cfg);
   assert.equal(pCancel.shouldNotify, false);
   assert.equal(pCancel.reason, 'user_canceled');
+
+  // Subagent completion -> silent by default
+  const pSub = evaluatePolicy({ kind: 'done', durationMs: 85_000, canceled: false, isSubagent: true }, cfg);
+  assert.equal(pSub.shouldNotify, false);
+  assert.equal(pSub.reason, 'subagent');
+
+  // Parent paused waiting for background subagents (fullyIdle === false) -> silent unless urgent
+  const pWait = evaluatePolicy({ kind: 'done', durationMs: 90_000, canceled: false, waitingBackground: true }, cfg);
+  assert.equal(pWait.shouldNotify, false);
+  assert.equal(pWait.reason, 'waiting_background');
+
+  const pWaitErr = evaluatePolicy({ kind: 'error', durationMs: 10_000, canceled: false, waitingBackground: true }, cfg);
+  assert.equal(pWaitErr.shouldNotify, true);
+  assert.equal(pWaitErr.tier, 'escalated');
+});
+
+test('Antigravity subagent detection and waitingBackground timer persistence', () => {
+  const mainTranscript = path.join(tmpRoot, 'main-session.jsonl');
+  fs.writeFileSync(
+    mainTranscript,
+    [
+      JSON.stringify({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', content: '<USER_REQUEST>帮我做个功能</USER_REQUEST>' }),
+      JSON.stringify({ step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', content: '已完成全部功能。' }),
+    ].join('\n') + '\n'
+  );
+  assert.equal(isAntigravitySubagentTranscript(mainTranscript), false);
+
+  const subTranscript = path.join(tmpRoot, 'subagent-session.jsonl');
+  fs.writeFileSync(
+    subTranscript,
+    [
+      JSON.stringify({ step_index: 0, source: 'SYSTEM', type: 'SYSTEM_MESSAGE', content: '<SYSTEM_MESSAGE>\n[Message] sender=parent-conv content=Generate image' }),
+      JSON.stringify({ step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', content: 'Done. Sent the final image path to the parent agent.' }),
+    ].join('\n') + '\n'
+  );
+  assert.equal(isAntigravitySubagentTranscript(subTranscript), true);
+
+  // Subagent Stop event should be flagged isSubagent = true
+  const subStop = adaptHookEvent('antigravity', {
+    hookEventName: 'Stop',
+    conversationId: 'sub-1',
+    transcriptPath: subTranscript,
+    terminationReason: 'NO_TOOL_CALL',
+    fullyIdle: true,
+  }, { config: DEFAULT_CONFIG });
+  assert.equal(subStop.event.isSubagent, true);
+
+  // Parent session pauses with fullyIdle=false, wakes up again, then finishes with fullyIdle=true -> preserves total timer!
+  adaptHookEvent('antigravity', { hookEventName: 'PreInvocation', conversationId: 'parent-timer', invocationNum: 1 }, { config: DEFAULT_CONFIG });
+  const midPause = adaptHookEvent('antigravity', {
+    hookEventName: 'Stop',
+    conversationId: 'parent-timer',
+    transcriptPath: mainTranscript,
+    terminationReason: 'NO_TOOL_CALL',
+    fullyIdle: false,
+  }, { config: DEFAULT_CONFIG });
+  assert.equal(midPause.event.isSubagent, false);
+  assert.equal(midPause.event.waitingBackground, true);
+  assert.equal(midPause.event.durationMs, null);
+
+  // Wake-up PreInvocation with invocationNum=1 must NOT reset startedAt while waitingBackground was set
+  adaptHookEvent('antigravity', { hookEventName: 'PreInvocation', conversationId: 'parent-timer', invocationNum: 1 }, { config: DEFAULT_CONFIG });
+  const finalStop = adaptHookEvent('antigravity', {
+    hookEventName: 'Stop',
+    conversationId: 'parent-timer',
+    transcriptPath: mainTranscript,
+    terminationReason: 'NO_TOOL_CALL',
+    fullyIdle: true,
+  }, { config: DEFAULT_CONFIG });
+  assert.equal(finalStop.event.waitingBackground, false);
+  assert.equal(typeof finalStop.event.durationMs, 'number');
 });
 
 test('webhook payloads and HMAC signatures generate valid structures', () => {

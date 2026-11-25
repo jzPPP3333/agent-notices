@@ -1,6 +1,58 @@
 import fs from 'node:fs';
 
+const HEAD_READ_BYTES = 8 * 1024;
 const TAIL_READ_BYTES = 96 * 1024;
+
+/**
+ * Detect whether an Antigravity transcript belongs to an internal subagent / worker session.
+ * Top-level user conversations start with a USER_INPUT / USER_EXPLICIT entry, whereas
+ * Antigravity subagents start with a SYSTEM_MESSAGE / SYSTEM dispatch from the parent agent.
+ */
+export function isAntigravitySubagentTranscript(transcriptPath) {
+  if (!transcriptPath || !fs.existsSync(transcriptPath)) return false;
+  try {
+    const stat = fs.statSync(transcriptPath);
+    if (stat.size === 0) return false;
+    const len = Math.min(stat.size, HEAD_READ_BYTES);
+    const buf = Buffer.alloc(len);
+    const fd = fs.openSync(transcriptPath, 'r');
+    try {
+      fs.readSync(fd, buf, 0, len, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const lines = buf.toString('utf8').split('\n');
+    let sawFirst = false;
+    let firstIsSystem = false;
+    let parsedCount = 0;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let entry;
+      try {
+        entry = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      parsedCount++;
+      if (entry.type === 'USER_INPUT' || entry.source === 'USER_EXPLICIT') {
+        return false;
+      }
+      if (!sawFirst) {
+        sawFirst = true;
+        if (entry.type === 'SYSTEM_MESSAGE' || entry.source === 'SYSTEM') {
+          firstIsSystem = true;
+        }
+      }
+      if (parsedCount >= 5) break;
+    }
+
+    return firstIsSystem;
+  } catch {
+    return false;
+  }
+}
 
 export function cleanText(input, maxLength = 220) {
   if (!input) return '';

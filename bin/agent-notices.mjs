@@ -131,7 +131,16 @@ async function cmdHook(positionals, flags) {
     config,
   });
 
-  if (event) {
+  const skipSubagent = Boolean(event?.isSubagent && config.policy?.ignoreSubagents !== false);
+  const skipBgWait = Boolean(
+    event?.waitingBackground &&
+      event?.kind !== 'error' &&
+      event?.kind !== 'attention' &&
+      config.policy?.waitForFullyIdle !== false
+  );
+  const skipCanceled = Boolean(event?.canceled && config.policy?.ignoreUserCanceled !== false);
+
+  if (event && !skipSubagent && !skipBgWait && !skipCanceled) {
     if (flags.sync) {
       await dispatchNotification(event, { config });
     } else {

@@ -85,6 +85,8 @@ export function handleClaudeHook(payload, { eventOverride = null, env = process.
         durationMs,
         reason: hookEvent,
         canceled: false,
+        isSubagent: hookEvent === 'SubagentStop',
+        waitingBackground: false,
         focusTarget,
         meta: {},
       },

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { consumeTurnDuration, markTurnStart } from '../store.mjs';
-import { extractLastAssistantText } from '../summary.mjs';
+import { consumeTurnDuration, markTurnStart, markTurnWaitingBackground } from '../store.mjs';
+import { extractLastAssistantText, isAntigravitySubagentTranscript } from '../summary.mjs';
 
 export function inferTerminalFocusTarget(env = process.env, fallback = { appName: 'Terminal', bundleId: 'com.apple.Terminal' }) {
   const term = String(env.TERM_PROGRAM || '').toLowerCase();
@@ -94,10 +94,15 @@ export function handleAntigravityHook(payload, { eventOverride = null, env = pro
   }
 
   if (hookEvent === 'Stop') {
-    const durationMs = consumeTurnDuration(sessionKey);
     const reason = String(payload?.terminationReason || 'NO_TOOL_CALL');
     const errorText = payload?.error ? String(payload.error) : '';
     const canceled = reason === 'USER_CANCELED';
+    const isSubagent = Boolean(
+      payload?.isSubagent ||
+      payload?.parentConversationId ||
+      isAntigravitySubagentTranscript(payload?.transcriptPath)
+    );
+    const waitingBackground = payload?.fullyIdle === false;
 
     let kind = 'done';
     let title = '会话任务已完成';
@@ -116,9 +121,18 @@ export function handleAntigravityHook(payload, { eventOverride = null, env = pro
     ) {
       kind = 'attention';
       title = '任务触发限制，需要人工查看';
-    } else if (payload?.fullyIdle === false) {
+    } else if (waitingBackground) {
       kind = 'done';
       title = '主回合已完成（仍有后台任务）';
+    }
+
+    // Preserve the turn timer if we are only pausing to wait for background subagents/tasks
+    const isUrgent = kind === 'error' || kind === 'attention';
+    let durationMs = null;
+    if (waitingBackground && !isUrgent && !isSubagent && config?.policy?.waitForFullyIdle !== false) {
+      markTurnWaitingBackground(sessionKey);
+    } else {
+      durationMs = consumeTurnDuration(sessionKey);
     }
 
     const readTranscript = config?.summary?.readTranscript !== false;
@@ -145,10 +159,13 @@ export function handleAntigravityHook(payload, { eventOverride = null, env = pro
         durationMs,
         reason,
         canceled,
+        isSubagent,
+        waitingBackground,
         focusTarget: buildAntigravityFocusTarget(payload, project, env),
         meta: {
           modelName: payload?.modelName || '',
           fullyIdle: payload?.fullyIdle ?? true,
+          isSubagent,
         },
       },
     };

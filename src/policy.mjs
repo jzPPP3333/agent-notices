@@ -23,13 +23,24 @@ export function evaluatePolicy(event, config, { now = new Date(), targetIsFocuse
     return { shouldNotify: false, tier: 'silent', reason: 'user_canceled', channels: emptyChannels() };
   }
 
+  // 1b. Internal subagent / helper task completion (e.g. image-generator, browser, research, Claude SubagentStop)
+  if (event.isSubagent && config.policy?.ignoreSubagents !== false) {
+    return { shouldNotify: false, tier: 'silent', reason: 'subagent', channels: emptyChannels() };
+  }
+
+  const isUrgent = event.kind === 'error' || event.kind === 'attention';
+
+  // 1c. Parent conversation paused mid-turn waiting for background tasks / subagents (fullyIdle === false)
+  if (event.waitingBackground && !isUrgent && config.policy?.waitForFullyIdle !== false) {
+    return { shouldNotify: false, tier: 'silent', reason: 'waiting_background', channels: emptyChannels() };
+  }
+
   // 2. Global enable / DND / Quiet Hours
   const dndState = isDndActive(config, now);
   if (dndState.active) {
     return { shouldNotify: false, tier: 'silent', reason: dndState.reason, channels: emptyChannels() };
   }
 
-  const isUrgent = event.kind === 'error' || event.kind === 'attention';
   const durationSec = typeof event.durationMs === 'number' ? event.durationMs / 1000 : null;
   const minSec = Number(config.policy?.minDurationSeconds ?? 5);
   const escalateSec = Number(config.policy?.escalateDurationSeconds ?? 30);
