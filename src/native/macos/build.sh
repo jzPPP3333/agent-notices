@@ -21,6 +21,7 @@ echo "Building NoticesPopup..."
 swiftc -O \
   -framework AppKit \
   -framework Foundation \
+  -framework QuartzCore \
   "$SRC_DIR/NoticesPopup.swift" \
   -o "$OUT_DIR/NoticesPopup"
 

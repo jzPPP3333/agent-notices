@@ -23,6 +23,8 @@ export const DEFAULT_CONFIG = {
     enabled: true,
     // "card" | "modal" | "banner"
     style: 'card',
+    // "pill" (compact dynamic pill, default) | "glass" (Apple liquid glass)
+    cardVariant: 'pill',
     escalatedStyle: 'modal',
     // "top-right" | "bottom-right" | "top-center" | "center"
     position: 'top-right',

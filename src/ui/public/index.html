@@ -341,6 +341,13 @@
             <label class="switch"><input type="checkbox" id="cfg-popup-enabled"><span class="slider"></span></label>
           </div>
           <div class="row">
+            <div><label>卡片视觉主题</label><small>均配备右上角圆环倒计时关闭钮，可随时切换</small></div>
+            <select id="cfg-popup-cardVariant">
+              <option value="pill">紧凑灵动胶囊卡 (默认 · 方案 C)</option>
+              <option value="glass">Apple 液态玻璃 (方案 A)</option>
+            </select>
+          </div>
+          <div class="row">
             <div><label>长任务/报错升级样式</label><small>超过升级耗时阈值或报错时自动切换</small></div>
             <select id="cfg-popup-escalatedStyle">
               <option value="modal">居中强弹窗 (Modal)</option>
@@ -671,6 +678,7 @@
 
       renderStylePicker();
       document.getElementById('cfg-popup-enabled').checked = c.popup.enabled !== false;
+      document.getElementById('cfg-popup-cardVariant').value = c.popup.cardVariant || 'pill';
       document.getElementById('cfg-popup-escalatedStyle').value = c.popup.escalatedStyle || 'modal';
       document.getElementById('cfg-popup-position').value = c.popup.position || 'top-right';
       document.getElementById('cfg-popup-durationSeconds').value = c.popup.durationSeconds ?? 10;
@@ -703,6 +711,7 @@
     function collectConfigFromForm() {
       const c = structuredClone(state.config);
       c.popup.enabled = document.getElementById('cfg-popup-enabled').checked;
+      c.popup.cardVariant = document.getElementById('cfg-popup-cardVariant').value;
       c.popup.escalatedStyle = document.getElementById('cfg-popup-escalatedStyle').value;
       c.popup.position = document.getElementById('cfg-popup-position').value;
       c.popup.durationSeconds = Number(document.getElementById('cfg-popup-durationSeconds').value || 0);
@@ -763,10 +772,11 @@
     async function fireTest(kind, sticky) {
       await saveCurrentConfig(false);
       const style = state.config.popup.style;
+      const cardVariant = document.getElementById('cfg-popup-cardVariant').value;
       const resp = await fetch('/api/test/popup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, style, sticky }),
+        body: JSON.stringify({ kind, style, cardVariant, sticky }),
       });
       const data = await resp.json();
       showToast(data.ok ? `✓ 已触发 ${style} 弹窗预览` : '触发失败');

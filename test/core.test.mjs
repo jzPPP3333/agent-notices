@@ -195,12 +195,18 @@ test('policy engine handles thresholds, escalation, sticky urgent, focus downgra
   assert.equal(pErr.channels.popup.style, 'modal');
   assert.equal(pErr.channels.popup.sticky, true);
 
-  // Medium task -> normal card
+  // Medium task -> normal card (default pill variant)
   const pMed = evaluatePolicy({ kind: 'done', durationMs: 15_000, canceled: false }, cfg);
   assert.equal(pMed.shouldNotify, true);
   assert.equal(pMed.tier, 'normal');
   assert.equal(pMed.channels.popup.style, 'card');
+  assert.equal(pMed.channels.popup.cardVariant, 'pill');
   assert.equal(pMed.channels.popup.sticky, false);
+
+  // Switching card variant to Apple liquid glass
+  cfg.popup.cardVariant = 'glass';
+  const pGlass = evaluatePolicy({ kind: 'done', durationMs: 15_000, canceled: false }, cfg);
+  assert.equal(pGlass.channels.popup.cardVariant, 'glass');
 
   // Long task -> escalated modal
   const pLong = evaluatePolicy({ kind: 'done', durationMs: 45_000, canceled: false }, cfg);

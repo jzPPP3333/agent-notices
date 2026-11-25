@@ -160,6 +160,7 @@ async function cmdSend(positionals, flags) {
 
   const popupOverrides = {};
   if (flags.style) popupOverrides.style = flags.style;
+  if (flags.variant) popupOverrides.cardVariant = flags.variant;
   if (flags.position) popupOverrides.position = flags.position;
   if (flags.sticky) {
     popupOverrides.sticky = true;
@@ -223,6 +224,7 @@ async function cmdTest(flags) {
     project: flags.project || resolveProjectName(process.cwd()),
     duration: flags.duration || '84',
     style,
+    variant: flags.variant,
     position: flags.position,
     sticky: flags.sticky,
     seconds: flags.seconds || '8',
@@ -324,7 +326,7 @@ function cmdStatus(flags) {
   console.log(`原生弹窗：   ${hasNativeMacPopup() ? '✓ macOS Swift AppKit 已编译' : '未编译（运行 npm run build:macos）'}`);
   console.log(`菜单栏助手： ${fs.existsSync(MACOS_MENUBAR_BIN) ? '✓ 已编译' : '未编译'}`);
   console.log(`提醒状态：   ${dnd.active ? `免打扰中 (${dnd.reason}${dnd.until ? ' 至 ' + dnd.until : ''})` : '✓ 正常运行中'}`);
-  console.log(`默认弹窗：   ${cfg.popup?.style} (${cfg.popup?.position}) · 升级弹窗：${cfg.popup?.escalatedStyle}`);
+  console.log(`默认弹窗：   ${cfg.popup?.style} / 卡片外观 ${cfg.popup?.cardVariant || 'pill'} (${cfg.popup?.position}) · 升级弹窗：${cfg.popup?.escalatedStyle}`);
   console.log(`未读提醒：   ${unread} 条`);
   console.log('');
   console.log('Agent Hooks 集成状态：');
@@ -444,7 +446,7 @@ AgentNotices — AI 会话任务完成多模态提醒工具
   agent-notices install [auto|all|antigravity|claude|codex|cursor]   一键安全接入 Hooks
   agent-notices uninstall [all|antigravity|claude|codex|cursor]      安全卸载 Hooks
   agent-notices status [--json]                                      查看配置与接入状态
-  agent-notices test [--style card|modal|banner] [--kind done|attention|error] [--sticky]
+  agent-notices test [--style card|modal|banner] [--variant pill|glass] [--kind done|attention|error] [--sticky]
                                                                      发送测试弹窗/音效/通道提醒
   agent-notices send --title "标题" --message "内容" [--style modal] 手动触发自定义提醒
   agent-notices run -- <command> [args...]                           包装任意长耗时命令，结束自动提醒

@@ -36,6 +36,7 @@ export async function showDesktopPopup(event, popupPlan) {
       project: event.project || 'Workspace',
       durationText: formatDuration(event.durationMs),
       style: popupPlan.style || 'card',
+      cardVariant: popupPlan.cardVariant || 'pill',
       position: popupPlan.position || 'top-right',
       durationSeconds: popupPlan.sticky ? 0 : Number(popupPlan.durationSeconds ?? 10),
       sticky: Boolean(popupPlan.sticky),

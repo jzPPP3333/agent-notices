@@ -16,8 +16,10 @@
   - **Cursor**：原生支持 `~/.cursor/hooks.json`（`beforeSubmitPrompt` + `stop`）。
   - **通用长命令包装**：`agent-notices run -- npm run build` 随时复用全套弹窗与推送能力。
 
-- **三种原生 macOS 毛玻璃桌面弹窗形态（无视系统勿扰吞没、不抢输入焦点）**
-  1. **`card`（角落悬浮卡片）**：跨 Space 与全屏应用置顶、悬停暂停倒计时、多条并发自动垂直堆叠、一键切回对应 IDE/终端窗口、一键「静音 30 分钟」。
+- **三种原生 macOS 毛玻璃桌面弹窗形态（无视系统勿扰吞没、不抢输入焦点、统一右上角圆环倒计时关闭钮）**
+  1. **`card`（角落悬浮卡片，内置双视觉主题）**：
+     - **`pill`（默认 · 紧凑灵动胶囊卡）**：大圆角极简省空间、实心发光状态徽章、右上角圆环倒计时关闭钮、通栏大按钮一甩即中。
+     - **`glass`（可切换 · Apple 液态玻璃）**：通透液态玻璃材质 + 左上柔和状态光晕 + 胶囊渐变按钮（运行 `agent-notices config set popup.cardVariant glass` 或在菜单栏/Web 控制台一键切换）。
   2. **`modal`（屏幕居中强提醒）**：面向长任务完成、报错或授权卡点的黄金居中大弹窗，支持常驻置顶直到手动确认、`Return` 一键切回、`Esc` 关闭。
   3. **`banner`（顶部灵动横幅）**：屏幕顶部胶囊横幅，轻盈不挡视野。
   - *Linux / Windows 自动降级为原生桌面通知 / PowerShell 提醒。*
@@ -59,8 +61,13 @@ npm link
 ### 2. 立刻测试原生弹窗效果
 
 ```bash
-# 角落悬浮卡片
-node bin/agent-notices.mjs test --style card
+# 角落悬浮卡片（默认 pill 灵动胶囊卡 / 可切换 glass 液态玻璃）
+node bin/agent-notices.mjs test --style card --variant pill
+node bin/agent-notices.mjs test --style card --variant glass
+
+# 永久切换卡片视觉样式
+node bin/agent-notices.mjs config set popup.cardVariant glass   # 切换为 Apple 液态玻璃
+node bin/agent-notices.mjs config set popup.cardVariant pill    # 切回紧凑灵动胶囊卡（默认）
 
 # 屏幕居中常驻强弹窗
 node bin/agent-notices.mjs test --style modal --kind attention --sticky

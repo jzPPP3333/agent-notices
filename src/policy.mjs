@@ -98,6 +98,7 @@ function buildPlan({ shouldNotify, tier, reason, event, config }) {
       popup: {
         enabled: popupCfg.enabled !== false,
         style: popupStyle,
+        cardVariant: popupCfg.cardVariant || 'pill',
         position: popupStyle === 'modal' ? 'center' : popupStyle === 'banner' ? 'top-center' : popupCfg.position || 'top-right',
         durationSeconds: sticky ? 0 : Math.max(3, Number(popupCfg.durationSeconds ?? 10)),
         sticky,

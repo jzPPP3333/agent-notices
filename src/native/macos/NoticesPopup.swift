@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import QuartzCore
 
 struct PopupPayload: Decodable, Sendable {
     let id: String?
@@ -11,6 +12,7 @@ struct PopupPayload: Decodable, Sendable {
     let project: String?
     let durationText: String?
     let style: String?
+    let cardVariant: String? // "pill" (default, Scheme C) | "glass" (Scheme A)
     let position: String?
     let durationSeconds: Double?
     let sticky: Bool?
@@ -33,7 +35,6 @@ final class SlotManager {
         let fm = FileManager.default
         try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
-        // Clean stale slots whose process is no longer alive
         if let files = try? fm.contentsOfDirectory(atPath: dir) {
             for f in files where f.hasPrefix("slot-") {
                 let full = "\(dir)/\(f)"
@@ -105,22 +106,201 @@ final class HoverTrackingView: NSView {
     }
 }
 
-final class PillButton: NSButton {
-    var bgColor: NSColor = .controlAccentColor
-    var fgColor: NSColor = .white
-    var borderCol: NSColor? = nil
-    var corner: CGFloat = 8
+/// Top-right circular countdown ring that also acts as the close button.
+final class CircularCountdownButton: NSView {
+    var onTap: (() -> Void)?
+    var accentColor: NSColor = .systemGreen {
+        didSet { progressLayer.strokeColor = accentColor.cgColor }
+    }
+    var isSticky: Bool = false {
+        didSet { updateAppearance() }
+    }
+    var progress: CGFloat = 1.0 {
+        didSet {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            progressLayer.strokeEnd = max(0.0, min(1.0, progress))
+            CATransaction.commit()
+        }
+    }
+
+    private let trackLayer = CAShapeLayer()
+    private let progressLayer = CAShapeLayer()
+    private let hoverBgLayer = CALayer()
+    private let glyphLabel = NSTextField(labelWithString: "✕")
+    private var tracking: NSTrackingArea?
+    private var isHovered = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        wantsLayer = true
+        guard let rootLayer = layer else { return }
+
+        hoverBgLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.0).cgColor
+        rootLayer.addSublayer(hoverBgLayer)
+
+        trackLayer.fillColor = NSColor.clear.cgColor
+        trackLayer.strokeColor = NSColor.labelColor.withAlphaComponent(0.16).cgColor
+        trackLayer.lineWidth = 2.2
+        rootLayer.addSublayer(trackLayer)
+
+        progressLayer.fillColor = NSColor.clear.cgColor
+        progressLayer.strokeColor = accentColor.cgColor
+        progressLayer.lineWidth = 2.2
+        progressLayer.lineCap = .round
+        progressLayer.strokeStart = 0
+        progressLayer.strokeEnd = 1.0
+        rootLayer.addSublayer(progressLayer)
+
+        glyphLabel.font = NSFont.systemFont(ofSize: 10, weight: .bold)
+        glyphLabel.textColor = NSColor.labelColor.withAlphaComponent(0.76)
+        glyphLabel.alignment = .center
+        glyphLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(glyphLabel)
+
+        NSLayoutConstraint.activate([
+            glyphLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            glyphLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -0.5),
+        ])
+    }
+
+    private func updateAppearance() {
+        if isSticky {
+            progressLayer.strokeEnd = 1.0
+            progressLayer.lineDashPattern = [3, 3]
+            toolTip = "常驻置顶 · 点击关闭"
+        } else {
+            progressLayer.lineDashPattern = nil
+            toolTip = "倒计时 · 悬停暂停 · 点击关闭"
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        let rect = bounds
+        hoverBgLayer.frame = rect.insetBy(dx: 2, dy: 2)
+        hoverBgLayer.cornerRadius = hoverBgLayer.bounds.width / 2.0
+
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2.0 - 2.0
+        // Start at 12 o'clock (pi/2 in non-flipped AppKit coordinates) and go clockwise
+        let circlePath = CGMutablePath()
+        circlePath.addArc(
+            center: center,
+            radius: radius,
+            startAngle: .pi / 2.0,
+            endAngle: .pi / 2.0 - .pi * 2.0,
+            clockwise: true
+        )
+        trackLayer.path = circlePath
+        progressLayer.path = circlePath
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = tracking {
+            removeTrackingArea(existing)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        hoverBgLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.14).cgColor
+        glyphLabel.textColor = .labelColor
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        hoverBgLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.0).cgColor
+        glyphLabel.textColor = NSColor.labelColor.withAlphaComponent(0.76)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onTap?()
+    }
+}
+
+/// Soft ambient corner glow view for Apple Liquid Glass card variant (Scheme A).
+final class AmbientGlowView: NSView {
+    var glowColor: NSColor = .systemGreen {
+        didSet { needsDisplay = true }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: corner, yRadius: corner)
-        let fill = isHighlighted ? bgColor.blended(withFraction: 0.18, of: .black) ?? bgColor : bgColor
-        fill.setFill()
-        path.fill()
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let colors = [
+            glowColor.withAlphaComponent(0.30).cgColor,
+            glowColor.withAlphaComponent(0.10).cgColor,
+            glowColor.withAlphaComponent(0.0).cgColor,
+        ] as CFArray
+        let locations: [CGFloat] = [0.0, 0.45, 1.0]
+        guard let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: locations) else { return }
+        let center = CGPoint(x: 34, y: bounds.height - 18)
+        ctx.drawRadialGradient(
+            gradient,
+            startCenter: center,
+            startRadius: 2,
+            endCenter: center,
+            endRadius: 135,
+            options: []
+        )
+    }
+}
+
+final class PillButton: NSButton {
+    var bgColor: NSColor = .controlAccentColor
+    var gradientBottomColor: NSColor? = nil
+    var fgColor: NSColor = .white
+    var borderCol: NSColor? = nil
+    var topHighlight: Bool = false
+    var corner: CGFloat = 10
+
+    override func draw(_ dirtyRect: NSRect) {
+        let insetRect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: insetRect, xRadius: corner, yRadius: corner)
+
+        if let bottomCol = gradientBottomColor {
+            let topCol = isHighlighted ? bgColor.blended(withFraction: 0.16, of: .black) ?? bgColor : bgColor
+            let botCol = isHighlighted ? bottomCol.blended(withFraction: 0.16, of: .black) ?? bottomCol : bottomCol
+            let grad = NSGradient(starting: botCol, ending: topCol)
+            grad?.draw(in: path, angle: 90)
+        } else {
+            let fill = isHighlighted ? bgColor.blended(withFraction: 0.18, of: .black) ?? bgColor : bgColor
+            fill.setFill()
+            path.fill()
+        }
+
+        if topHighlight {
+            let hlPath = NSBezierPath(roundedRect: insetRect.insetBy(dx: 0.5, dy: 0.5), xRadius: max(1, corner - 0.5), yRadius: max(1, corner - 0.5))
+            NSColor.white.withAlphaComponent(0.24).setStroke()
+            hlPath.lineWidth = 0.8
+            hlPath.stroke()
+        }
+
         if let borderCol {
             borderCol.setStroke()
-            path.lineWidth = 1
+            path.lineWidth = 1.0
             path.stroke()
         }
+
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         let attrs: [NSAttributedString.Key: Any] = [
@@ -164,8 +344,7 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
     private let payload: PopupPayload
     private let slotManager = SlotManager()
     private var panel: NoticePanel?
-    private var progressFill: NSView?
-    private var progressWidthConstraint: NSLayoutConstraint?
+    private var countdownRing: CircularCountdownButton?
     private var timer: Timer?
     private var totalDuration: Double = 10
     private var remaining: Double = 10
@@ -187,20 +366,41 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         slotManager.release()
     }
 
-    private func accentColor(for kind: String) -> NSColor {
+    private func accentColors(for kind: String) -> (top: NSColor, bottom: NSColor) {
         switch kind {
         case "error":
-            return NSColor(calibratedRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0)
+            return (
+                NSColor(calibratedRed: 0.95, green: 0.28, blue: 0.28, alpha: 1.0),
+                NSColor(calibratedRed: 0.84, green: 0.16, blue: 0.16, alpha: 1.0)
+            )
         case "attention":
-            return NSColor(calibratedRed: 0.96, green: 0.62, blue: 0.04, alpha: 1.0)
+            return (
+                NSColor(calibratedRed: 0.96, green: 0.63, blue: 0.06, alpha: 1.0),
+                NSColor(calibratedRed: 0.85, green: 0.47, blue: 0.03, alpha: 1.0)
+            )
         case "info":
-            return NSColor(calibratedRed: 0.23, green: 0.51, blue: 0.96, alpha: 1.0)
+            return (
+                NSColor(calibratedRed: 0.24, green: 0.53, blue: 0.97, alpha: 1.0),
+                NSColor(calibratedRed: 0.15, green: 0.39, blue: 0.88, alpha: 1.0)
+            )
         default: // done
-            return NSColor(calibratedRed: 0.13, green: 0.77, blue: 0.37, alpha: 1.0)
+            return (
+                NSColor(calibratedRed: 0.15, green: 0.78, blue: 0.39, alpha: 1.0),
+                NSColor(calibratedRed: 0.09, green: 0.64, blue: 0.29, alpha: 1.0)
+            )
         }
     }
 
     private func symbolName(for kind: String) -> String {
+        switch kind {
+        case "error": return "xmark"
+        case "attention": return "exclamationmark"
+        case "info": return "bell.fill"
+        default: return "checkmark"
+        }
+    }
+
+    private func modalSymbolName(for kind: String) -> String {
         switch kind {
         case "error": return "xmark.octagon.fill"
         case "attention": return "exclamationmark.triangle.fill"
@@ -225,13 +425,83 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func makeCountdownRing(accent: NSColor, size: CGFloat = 28) -> CircularCountdownButton {
+        let ring = CircularCountdownButton(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        ring.accentColor = accent
+        ring.isSticky = isSticky
+        ring.progress = 1.0
+        ring.onTap = { [weak self] in self?.dismiss() }
+        ring.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            ring.widthAnchor.constraint(equalToConstant: size),
+            ring.heightAnchor.constraint(equalToConstant: size),
+        ])
+        self.countdownRing = ring
+        return ring
+    }
+
+    private func makeBadge(text: String, bg: NSColor, fg: NSColor, corner: CGFloat = 999) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = bg.cgColor
+        container.layer?.cornerRadius = corner == 999 ? 9 : corner
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .semibold)
+        label.textColor = fg
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 7),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -7),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 2.5),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2.5),
+        ])
+        return container
+    }
+
+    private func makeActionButton(
+        title: String,
+        bg: NSColor,
+        gradientBottom: NSColor? = nil,
+        fg: NSColor,
+        border: NSColor? = nil,
+        topHighlight: Bool = false,
+        action: Selector,
+        height: CGFloat = 30,
+        corner: CGFloat = 15,
+        flexibleWidth: Bool = false
+    ) -> PillButton {
+        let btn = PillButton(title: title, target: self, action: action)
+        btn.isBordered = false
+        btn.bgColor = bg
+        btn.gradientBottomColor = gradientBottom
+        btn.fgColor = fg
+        btn.borderCol = border
+        btn.topHighlight = topHighlight
+        btn.corner = corner
+        btn.font = NSFont.systemFont(ofSize: height >= 32 ? 12.5 : 11.8, weight: .semibold)
+        btn.translatesAutoresizingMaskIntoConstraints = false
+        btn.heightAnchor.constraint(equalToConstant: height).isActive = true
+        if !flexibleWidth {
+            let measured = (title as NSString).size(withAttributes: [.font: btn.font!]).width
+            btn.widthAnchor.constraint(greaterThanOrEqualToConstant: measured + 26).isActive = true
+        }
+        return btn
+    }
+
     private func buildAndShowPanel() {
         let style = (payload.style ?? "card").lowercased()
+        let variant = (payload.cardVariant ?? "pill").lowercased() // default: pill (Scheme C), alternate: glass (Scheme A)
         let kind = (payload.kind ?? "done").lowercased()
-        let accent = accentColor(for: kind)
+        let colors = accentColors(for: kind)
+        let accent = colors.top
+        let accentBottom = colors.bottom
         let titleText = payload.title ?? "会话任务已完成"
         let bodyText = payload.message ?? "任务已结束，可返回查看。"
-        let agentText = (payload.agentLabel ?? payload.agent ?? "Agent").uppercased()
+        let agentText = payload.agentLabel ?? payload.agent ?? "Agent"
         let projectText = payload.project ?? "Workspace"
         let durationText = payload.durationText ?? ""
         let showFocus = (payload.showFocusButton ?? true) && !((payload.focusBundleId ?? "").isEmpty && (payload.focusAppName ?? "").isEmpty)
@@ -244,25 +514,34 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
 
         let panelWidth: CGFloat
         let panelHeight: CGFloat
+        let cornerRadius: CGFloat
+
         switch style {
         case "modal":
             panelWidth = 468
-            panelHeight = bodyText.count > 95 ? 248 : 220
+            panelHeight = bodyText.count > 95 ? 246 : 218
+            cornerRadius = 22
         case "banner":
             panelWidth = 456
-            panelHeight = 80
+            panelHeight = 76
+            cornerRadius = 22
         default: // card
-            panelWidth = 396
-            panelHeight = bodyText.count > 90 ? 186 : 162
+            if variant == "glass" {
+                // Scheme A: Apple Liquid Glass
+                panelWidth = 396
+                panelHeight = bodyText.count > 75 ? 176 : 158
+                cornerRadius = 20
+            } else {
+                // Scheme C (Default): Compact Dynamic Pill Card
+                panelWidth = 360
+                panelHeight = bodyText.count > 55 ? 148 : 134
+                cornerRadius = 24
+            }
         }
-
-        let styleMask: NSWindow.StyleMask = style == "modal"
-            ? [.borderless, .nonactivatingPanel]
-            : [.borderless, .nonactivatingPanel]
 
         let panel = NoticePanel(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
-            styleMask: styleMask,
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -280,8 +559,6 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         panel.onReturn = { [weak self] in self?.handleFocusTap() }
         self.panel = panel
 
-        let cornerRadius: CGFloat = style == "banner" ? 22 : (style == "modal" ? 20 : 16)
-
         // Root hover-tracking container
         let root = HoverTrackingView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight))
         root.wantsLayer = true
@@ -291,24 +568,23 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
             self?.isHovered = hovered
         }
 
-        // Frosted glass background
+        // Frosted glass material
         let blur = NSVisualEffectView(frame: root.bounds)
         blur.autoresizingMask = [.width, .height]
-        blur.material = .hudWindow
+        blur.material = (style == "card" && variant == "glass") ? .popover : .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.wantsLayer = true
         blur.layer?.cornerRadius = cornerRadius
         blur.layer?.borderWidth = 1.0
-        blur.layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.14).cgColor
+        blur.layer?.borderColor = NSColor.labelColor.withAlphaComponent(variant == "glass" ? 0.18 : 0.14).cgColor
         root.addSubview(blur)
 
         if style == "banner" {
             buildBannerLayout(
                 in: root,
-                width: panelWidth,
-                height: panelHeight,
                 accent: accent,
+                accentBottom: accentBottom,
                 kind: kind,
                 agentText: agentText,
                 projectText: projectText,
@@ -320,9 +596,22 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         } else if style == "modal" {
             buildModalLayout(
                 in: root,
-                width: panelWidth,
-                height: panelHeight,
                 accent: accent,
+                accentBottom: accentBottom,
+                kind: kind,
+                agentText: agentText,
+                projectText: projectText,
+                durationText: durationText,
+                titleText: titleText,
+                bodyText: bodyText,
+                showFocus: showFocus,
+                showMute: showMute
+            )
+        } else if variant == "glass" {
+            buildGlassCardLayout(
+                in: root,
+                accent: accent,
+                accentBottom: accentBottom,
                 kind: kind,
                 agentText: agentText,
                 projectText: projectText,
@@ -333,11 +622,10 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
                 showMute: showMute
             )
         } else {
-            buildCardLayout(
+            buildPillCardLayout(
                 in: root,
-                width: panelWidth,
-                height: panelHeight,
                 accent: accent,
+                accentBottom: accentBottom,
                 kind: kind,
                 agentText: agentText,
                 projectText: projectText,
@@ -347,37 +635,6 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
                 showFocus: showFocus,
                 showMute: showMute
             )
-        }
-
-        // Bottom countdown progress bar
-        if !isSticky {
-            let track = NSView()
-            track.wantsLayer = true
-            track.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
-            track.translatesAutoresizingMaskIntoConstraints = false
-            root.addSubview(track)
-
-            let fill = NSView()
-            fill.wantsLayer = true
-            fill.layer?.backgroundColor = accent.withAlphaComponent(0.9).cgColor
-            fill.translatesAutoresizingMaskIntoConstraints = false
-            track.addSubview(fill)
-            self.progressFill = fill
-
-            let widthConstraint = fill.widthAnchor.constraint(equalToConstant: panelWidth)
-            self.progressWidthConstraint = widthConstraint
-
-            NSLayoutConstraint.activate([
-                track.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-                track.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-                track.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-                track.heightAnchor.constraint(equalToConstant: 3),
-
-                fill.leadingAnchor.constraint(equalTo: track.leadingAnchor),
-                fill.topAnchor.constraint(equalTo: track.topAnchor),
-                fill.bottomAnchor.constraint(equalTo: track.bottomAnchor),
-                widthConstraint,
-            ])
         }
 
         panel.contentView = root
@@ -408,7 +665,6 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
             targetOrigin = NSPoint(x: x, y: y)
             startOrigin = NSPoint(x: x + 28, y: y)
         } else {
-            // top-right default
             let slot = slotManager.acquire(maxSlots: 5)
             let x = vf.maxX - panelWidth - 16
             let y = vf.maxY - panelHeight - 14 - CGFloat(slot) * (panelHeight + 12)
@@ -428,67 +684,15 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if !isSticky {
-            startCountdown(panelWidth: panelWidth)
+            startCountdown()
         }
     }
 
-    private func makeBadge(text: String, bg: NSColor, fg: NSColor) -> NSView {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = bg.cgColor
-        container.layer?.cornerRadius = 5
-        container.translatesAutoresizingMaskIntoConstraints = false
-
-        let label = NSTextField(labelWithString: text)
-        label.font = NSFont.systemFont(ofSize: 10, weight: .bold)
-        label.textColor = fg
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(label)
-
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
-            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
-            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -2),
-        ])
-        return container
-    }
-
-    private func makeCloseIconButton() -> NSButton {
-        let btn = NSButton(title: "✕", target: self, action: #selector(handleDismissTap))
-        btn.isBordered = false
-        btn.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        btn.contentTintColor = .secondaryLabelColor
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            btn.widthAnchor.constraint(equalToConstant: 22),
-            btn.heightAnchor.constraint(equalToConstant: 22),
-        ])
-        return btn
-    }
-
-    private func makeActionButton(title: String, bg: NSColor, fg: NSColor, border: NSColor? = nil, action: Selector, height: CGFloat = 28) -> PillButton {
-        let btn = PillButton(title: title, target: self, action: action)
-        btn.isBordered = false
-        btn.bgColor = bg
-        btn.fgColor = fg
-        btn.borderCol = border
-        btn.corner = height >= 32 ? 9 : 7
-        btn.font = NSFont.systemFont(ofSize: height >= 32 ? 12.5 : 11.5, weight: .semibold)
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        let measured = (title as NSString).size(withAttributes: [.font: btn.font!]).width
-        NSLayoutConstraint.activate([
-            btn.heightAnchor.constraint(equalToConstant: height),
-            btn.widthAnchor.constraint(greaterThanOrEqualToConstant: measured + 24),
-        ])
-        return btn
-    }
-
-    private func buildCardLayout(
+    // MARK: - Scheme C (Default): Compact Dynamic Pill Card
+    private func buildPillCardLayout(
         in root: NSView,
-        width: CGFloat,
-        height: CGFloat,
         accent: NSColor,
+        accentBottom: NSColor,
         kind: String,
         agentText: String,
         projectText: String,
@@ -498,155 +702,349 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         showFocus: Bool,
         showMute: Bool
     ) {
-        // Left accent stripe
-        let stripe = NSView()
-        stripe.wantsLayer = true
-        stripe.layer?.backgroundColor = accent.cgColor
-        stripe.layer?.cornerRadius = 2
-        stripe.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(stripe)
+        // Solid glowing status circle badge
+        let iconBg = NSView()
+        iconBg.wantsLayer = true
+        iconBg.layer?.backgroundColor = accent.cgColor
+        iconBg.layer?.cornerRadius = 14
+        iconBg.layer?.shadowColor = accent.cgColor
+        iconBg.layer?.shadowOpacity = 0.45
+        iconBg.layer?.shadowRadius = 7
+        iconBg.layer?.shadowOffset = .zero
+        iconBg.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(iconBg)
 
-        // Header row
-        let badge = makeBadge(text: agentText, bg: accent.withAlphaComponent(0.18), fg: accent)
-        let projLabel = NSTextField(labelWithString: projectText)
-        projLabel.font = NSFont.systemFont(ofSize: 11.5, weight: .medium)
-        projLabel.textColor = .secondaryLabelColor
-        projLabel.lineBreakMode = .byTruncatingTail
-        projLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let closeBtn = makeCloseIconButton()
-
-        let header = NSStackView(views: [badge, projLabel])
-        header.orientation = .horizontal
-        header.spacing = 7
-        header.alignment = .centerY
-        header.translatesAutoresizingMaskIntoConstraints = false
-
-        if !durationText.isEmpty {
-            let durBadge = makeBadge(
-                text: "⏱ \(durationText)",
-                bg: NSColor.labelColor.withAlphaComponent(0.08),
-                fg: .secondaryLabelColor
-            )
-            header.addArrangedSubview(durBadge)
-        }
-        if isSticky {
-            let pinBadge = makeBadge(
-                text: "常驻",
-                bg: accent.withAlphaComponent(0.14),
-                fg: accent
-            )
-            header.addArrangedSubview(pinBadge)
-        }
-
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        header.addArrangedSubview(spacer)
-        header.addArrangedSubview(closeBtn)
-
-        // Title + icon
         let iconView = NSImageView()
         if let sym = NSImage(systemSymbolName: symbolName(for: kind), accessibilityDescription: nil) {
-            let cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+            let cfg = NSImage.SymbolConfiguration(pointSize: 12.5, weight: .black)
+            iconView.image = sym.withSymbolConfiguration(cfg)
+            iconView.contentTintColor = .white
+        }
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconBg.addSubview(iconView)
+
+        // Title + compact single-line subtitle
+        let titleField = NSTextField(labelWithString: titleText)
+        titleField.font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        titleField.textColor = .labelColor
+        titleField.lineBreakMode = .byTruncatingTail
+        titleField.translatesAutoresizingMaskIntoConstraints = false
+
+        var metaParts = [agentText, projectText]
+        if !durationText.isEmpty { metaParts.append(durationText) }
+        if isSticky { metaParts.append("常驻") }
+        let subField = NSTextField(labelWithString: metaParts.joined(separator: " · "))
+        subField.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        subField.textColor = .secondaryLabelColor
+        subField.lineBreakMode = .byTruncatingTail
+        subField.translatesAutoresizingMaskIntoConstraints = false
+
+        let textCol = NSStackView(views: [titleField, subField])
+        textCol.orientation = .vertical
+        textCol.spacing = 1.5
+        textCol.alignment = .leading
+        textCol.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(textCol)
+
+        // Top-right circular countdown close button
+        let ring = makeCountdownRing(accent: accent, size: 28)
+        root.addSubview(ring)
+
+        // Compact 2-line summary
+        let bodyField = NSTextField(wrappingLabelWithString: bodyText)
+        bodyField.font = NSFont.systemFont(ofSize: 12.2, weight: .regular)
+        bodyField.textColor = NSColor.labelColor.withAlphaComponent(0.84)
+        bodyField.maximumNumberOfLines = 2
+        bodyField.lineBreakMode = .byTruncatingTail
+        bodyField.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(bodyField)
+
+        // Full-width docked dual action bar
+        let dock = NSView()
+        dock.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(dock)
+
+        if showFocus && showMute {
+            let appLabel = payload.focusAppName ?? "原窗口"
+            let focusBtn = makeActionButton(
+                title: "切回 \(appLabel) ↗",
+                bg: accent,
+                gradientBottom: accentBottom,
+                fg: .white,
+                topHighlight: true,
+                action: #selector(handleFocusTap),
+                height: 32,
+                corner: 13,
+                flexibleWidth: true
+            )
+            let muteBtn = makeActionButton(
+                title: "静音 30m",
+                bg: NSColor.labelColor.withAlphaComponent(0.11),
+                fg: .labelColor,
+                action: #selector(handleMuteTap),
+                height: 32,
+                corner: 13,
+                flexibleWidth: true
+            )
+            dock.addSubview(focusBtn)
+            dock.addSubview(muteBtn)
+
+            NSLayoutConstraint.activate([
+                focusBtn.leadingAnchor.constraint(equalTo: dock.leadingAnchor),
+                focusBtn.topAnchor.constraint(equalTo: dock.topAnchor),
+                focusBtn.bottomAnchor.constraint(equalTo: dock.bottomAnchor),
+
+                muteBtn.leadingAnchor.constraint(equalTo: focusBtn.trailingAnchor, constant: 8),
+                muteBtn.trailingAnchor.constraint(equalTo: dock.trailingAnchor),
+                muteBtn.topAnchor.constraint(equalTo: dock.topAnchor),
+                muteBtn.bottomAnchor.constraint(equalTo: dock.bottomAnchor),
+                muteBtn.widthAnchor.constraint(equalTo: dock.widthAnchor, multiplier: 0.35),
+            ])
+        } else if showFocus {
+            let appLabel = payload.focusAppName ?? "原窗口"
+            let focusBtn = makeActionButton(
+                title: "切回 \(appLabel) ↗",
+                bg: accent,
+                gradientBottom: accentBottom,
+                fg: .white,
+                topHighlight: true,
+                action: #selector(handleFocusTap),
+                height: 32,
+                corner: 13,
+                flexibleWidth: true
+            )
+            dock.addSubview(focusBtn)
+            NSLayoutConstraint.activate([
+                focusBtn.leadingAnchor.constraint(equalTo: dock.leadingAnchor),
+                focusBtn.trailingAnchor.constraint(equalTo: dock.trailingAnchor),
+                focusBtn.topAnchor.constraint(equalTo: dock.topAnchor),
+                focusBtn.bottomAnchor.constraint(equalTo: dock.bottomAnchor),
+            ])
+        } else {
+            let closeBtn = makeActionButton(
+                title: "知道了",
+                bg: NSColor.labelColor.withAlphaComponent(0.11),
+                fg: .labelColor,
+                action: #selector(handleDismissTap),
+                height: 32,
+                corner: 13,
+                flexibleWidth: true
+            )
+            dock.addSubview(closeBtn)
+            NSLayoutConstraint.activate([
+                closeBtn.leadingAnchor.constraint(equalTo: dock.leadingAnchor),
+                closeBtn.trailingAnchor.constraint(equalTo: dock.trailingAnchor),
+                closeBtn.topAnchor.constraint(equalTo: dock.topAnchor),
+                closeBtn.bottomAnchor.constraint(equalTo: dock.bottomAnchor),
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            iconBg.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            iconBg.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
+            iconBg.widthAnchor.constraint(equalToConstant: 28),
+            iconBg.heightAnchor.constraint(equalToConstant: 28),
+
+            iconView.centerXAnchor.constraint(equalTo: iconBg.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
+
+            ring.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -13),
+            ring.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
+
+            textCol.leadingAnchor.constraint(equalTo: iconBg.trailingAnchor, constant: 10),
+            textCol.trailingAnchor.constraint(equalTo: ring.leadingAnchor, constant: -8),
+            textCol.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
+
+            bodyField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 15),
+            bodyField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -15),
+            bodyField.topAnchor.constraint(equalTo: iconBg.bottomAnchor, constant: 10),
+
+            dock.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            dock.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            dock.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -13),
+            dock.heightAnchor.constraint(equalToConstant: 32),
+        ])
+    }
+
+    // MARK: - Scheme A: Apple Liquid Glass Card (with top-right circular countdown)
+    private func buildGlassCardLayout(
+        in root: NSView,
+        accent: NSColor,
+        accentBottom: NSColor,
+        kind: String,
+        agentText: String,
+        projectText: String,
+        durationText: String,
+        titleText: String,
+        bodyText: String,
+        showFocus: Bool,
+        showMute: Bool
+    ) {
+        // Subtle ambient status glow in top-left corner
+        let glow = AmbientGlowView(frame: root.bounds)
+        glow.glowColor = accent
+        glow.autoresizingMask = [.width, .height]
+        root.addSubview(glow)
+
+        // Rounded squircle frosted status icon container
+        let iconBg = NSView()
+        iconBg.wantsLayer = true
+        iconBg.layer?.backgroundColor = accent.withAlphaComponent(0.16).cgColor
+        iconBg.layer?.cornerRadius = 12
+        iconBg.layer?.borderWidth = 1.0
+        iconBg.layer?.borderColor = accent.withAlphaComponent(0.36).cgColor
+        iconBg.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(iconBg)
+
+        let iconView = NSImageView()
+        if let sym = NSImage(systemSymbolName: symbolName(for: kind), accessibilityDescription: nil) {
+            let cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .bold)
             iconView.image = sym.withSymbolConfiguration(cfg)
             iconView.contentTintColor = accent
         }
         iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconBg.addSubview(iconView)
 
+        // Top-right circular countdown close button + optional duration pill
+        let ring = makeCountdownRing(accent: accent, size: 28)
+        root.addSubview(ring)
+
+        let rightStack = NSStackView()
+        rightStack.orientation = .horizontal
+        rightStack.spacing = 7
+        rightStack.alignment = .centerY
+        rightStack.translatesAutoresizingMaskIntoConstraints = false
+        if !durationText.isEmpty {
+            rightStack.addArrangedSubview(
+                makeBadge(
+                    text: durationText,
+                    bg: NSColor.labelColor.withAlphaComponent(0.10),
+                    fg: .secondaryLabelColor
+                )
+            )
+        } else if isSticky {
+            rightStack.addArrangedSubview(
+                makeBadge(text: "常驻", bg: accent.withAlphaComponent(0.16), fg: accent)
+            )
+        }
+        rightStack.addArrangedSubview(ring)
+        root.addSubview(rightStack)
+
+        // Title & meta line
         let titleField = NSTextField(labelWithString: titleText)
         titleField.font = NSFont.systemFont(ofSize: 14.5, weight: .bold)
         titleField.textColor = .labelColor
         titleField.lineBreakMode = .byTruncatingTail
         titleField.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleRow = NSStackView(views: [iconView, titleField])
-        titleRow.orientation = .horizontal
-        titleRow.spacing = 6
-        titleRow.alignment = .centerY
-        titleRow.translatesAutoresizingMaskIntoConstraints = false
+        let metaText = isSticky && !durationText.isEmpty ? "\(agentText) · \(projectText) · 常驻" : "\(agentText) · \(projectText)"
+        let metaField = NSTextField(labelWithString: metaText)
+        metaField.font = NSFont.systemFont(ofSize: 11.5, weight: .medium)
+        metaField.textColor = .secondaryLabelColor
+        metaField.lineBreakMode = .byTruncatingTail
+        metaField.translatesAutoresizingMaskIntoConstraints = false
 
-        // Body
+        let headCol = NSStackView(views: [titleField, metaField])
+        headCol.orientation = .vertical
+        headCol.spacing = 2
+        headCol.alignment = .leading
+        headCol.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(headCol)
+
+        // Airy 3-line summary
         let bodyField = NSTextField(wrappingLabelWithString: bodyText)
-        bodyField.font = NSFont.systemFont(ofSize: 12.2, weight: .regular)
-        bodyField.textColor = NSColor.labelColor.withAlphaComponent(0.84)
+        bodyField.font = NSFont.systemFont(ofSize: 12.6, weight: .regular)
+        bodyField.textColor = NSColor.labelColor.withAlphaComponent(0.86)
         bodyField.maximumNumberOfLines = 3
         bodyField.lineBreakMode = .byTruncatingTail
         bodyField.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(bodyField)
 
-        // Actions
+        // Bottom pill action row (left ghost mute, right gradient focus)
         let actions = NSStackView()
         actions.orientation = .horizontal
         actions.spacing = 8
         actions.alignment = .centerY
         actions.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(actions)
+
+        if showMute {
+            actions.addArrangedSubview(
+                makeActionButton(
+                    title: "静音 30m",
+                    bg: NSColor.labelColor.withAlphaComponent(0.08),
+                    fg: .labelColor,
+                    border: NSColor.labelColor.withAlphaComponent(0.16),
+                    action: #selector(handleMuteTap),
+                    height: 30,
+                    corner: 15
+                )
+            )
+        }
+
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        actions.addArrangedSubview(spacer)
 
         if showFocus {
             let appLabel = payload.focusAppName ?? "原窗口"
-            let focusBtn = makeActionButton(
-                title: "切回 \(appLabel) ↗",
-                bg: accent,
-                fg: .white,
-                action: #selector(handleFocusTap)
+            actions.addArrangedSubview(
+                makeActionButton(
+                    title: "切回 \(appLabel) ↗",
+                    bg: accent,
+                    gradientBottom: accentBottom,
+                    fg: .white,
+                    topHighlight: true,
+                    action: #selector(handleFocusTap),
+                    height: 30,
+                    corner: 15
+                )
             )
-            actions.addArrangedSubview(focusBtn)
-        }
-        if showMute {
-            let muteBtn = makeActionButton(
-                title: "静音 30m",
-                bg: NSColor.labelColor.withAlphaComponent(0.08),
-                fg: .labelColor,
-                border: NSColor.labelColor.withAlphaComponent(0.12),
-                action: #selector(handleMuteTap)
+        } else {
+            actions.addArrangedSubview(
+                makeActionButton(
+                    title: "知道了",
+                    bg: NSColor.labelColor.withAlphaComponent(0.10),
+                    fg: .labelColor,
+                    action: #selector(handleDismissTap),
+                    height: 30,
+                    corner: 15
+                )
             )
-            actions.addArrangedSubview(muteBtn)
         }
-        let btnSpacer = NSView()
-        btnSpacer.translatesAutoresizingMaskIntoConstraints = false
-        actions.addArrangedSubview(btnSpacer)
-
-        let okBtn = makeActionButton(
-            title: "关闭",
-            bg: NSColor.labelColor.withAlphaComponent(0.07),
-            fg: .secondaryLabelColor,
-            action: #selector(handleDismissTap)
-        )
-        actions.addArrangedSubview(okBtn)
-
-        root.addSubview(header)
-        root.addSubview(titleRow)
-        root.addSubview(bodyField)
-        root.addSubview(actions)
 
         NSLayoutConstraint.activate([
-            stripe.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 6),
-            stripe.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
-            stripe.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
-            stripe.widthAnchor.constraint(equalToConstant: 4),
+            iconBg.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
+            iconBg.topAnchor.constraint(equalTo: root.topAnchor, constant: 15),
+            iconBg.widthAnchor.constraint(equalToConstant: 36),
+            iconBg.heightAnchor.constraint(equalToConstant: 36),
 
-            header.leadingAnchor.constraint(equalTo: stripe.trailingAnchor, constant: 10),
-            header.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            header.topAnchor.constraint(equalTo: root.topAnchor, constant: 11),
+            iconView.centerXAnchor.constraint(equalTo: iconBg.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
 
-            titleRow.leadingAnchor.constraint(equalTo: stripe.trailingAnchor, constant: 10),
-            titleRow.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-            titleRow.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 7),
+            rightStack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            rightStack.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
 
-            bodyField.leadingAnchor.constraint(equalTo: stripe.trailingAnchor, constant: 10),
-            bodyField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-            bodyField.topAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: 5),
+            headCol.leadingAnchor.constraint(equalTo: iconBg.trailingAnchor, constant: 11),
+            headCol.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -8),
+            headCol.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
 
-            actions.leadingAnchor.constraint(equalTo: stripe.trailingAnchor, constant: 10),
-            actions.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-            actions.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
+            bodyField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
+            bodyField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+            bodyField.topAnchor.constraint(equalTo: iconBg.bottomAnchor, constant: 11),
+
+            actions.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
+            actions.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+            actions.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
         ])
     }
 
+    // MARK: - Modal (Centered Strong Alert with top-right circular countdown)
     private func buildModalLayout(
         in root: NSView,
-        width: CGFloat,
-        height: CGFloat,
         accent: NSColor,
+        accentBottom: NSColor,
         kind: String,
         agentText: String,
         projectText: String,
@@ -656,22 +1054,22 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         showFocus: Bool,
         showMute: Bool
     ) {
-        // Top accent bar
-        let topBar = NSView()
-        topBar.wantsLayer = true
-        topBar.layer?.backgroundColor = accent.cgColor
-        topBar.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(topBar)
+        let glow = AmbientGlowView(frame: root.bounds)
+        glow.glowColor = accent
+        glow.autoresizingMask = [.width, .height]
+        root.addSubview(glow)
 
         let iconBg = NSView()
         iconBg.wantsLayer = true
         iconBg.layer?.backgroundColor = accent.withAlphaComponent(0.16).cgColor
         iconBg.layer?.cornerRadius = 20
+        iconBg.layer?.borderWidth = 1.0
+        iconBg.layer?.borderColor = accent.withAlphaComponent(0.32).cgColor
         iconBg.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(iconBg)
 
         let iconView = NSImageView()
-        if let sym = NSImage(systemSymbolName: symbolName(for: kind), accessibilityDescription: nil) {
+        if let sym = NSImage(systemSymbolName: modalSymbolName(for: kind), accessibilityDescription: nil) {
             let cfg = NSImage.SymbolConfiguration(pointSize: 21, weight: .bold)
             iconView.image = sym.withSymbolConfiguration(cfg)
             iconView.contentTintColor = accent
@@ -679,7 +1077,7 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconBg.addSubview(iconView)
 
-        let badge = makeBadge(text: agentText, bg: accent.withAlphaComponent(0.18), fg: accent)
+        let badge = makeBadge(text: agentText.uppercased(), bg: accent.withAlphaComponent(0.18), fg: accent, corner: 6)
         let proj = NSTextField(labelWithString: projectText)
         proj.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         proj.textColor = .secondaryLabelColor
@@ -692,12 +1090,12 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         metaRow.translatesAutoresizingMaskIntoConstraints = false
         if !durationText.isEmpty {
             metaRow.addArrangedSubview(
-                makeBadge(text: "⏱ \(durationText)", bg: NSColor.labelColor.withAlphaComponent(0.08), fg: .secondaryLabelColor)
+                makeBadge(text: durationText, bg: NSColor.labelColor.withAlphaComponent(0.08), fg: .secondaryLabelColor)
             )
         }
         if isSticky {
             metaRow.addArrangedSubview(
-                makeBadge(text: "等待确认", bg: accent.withAlphaComponent(0.14), fg: accent)
+                makeBadge(text: "等待确认", bg: accent.withAlphaComponent(0.16), fg: accent)
             )
         }
 
@@ -707,16 +1105,15 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         titleField.lineBreakMode = .byTruncatingTail
         titleField.translatesAutoresizingMaskIntoConstraints = false
 
-        let closeBtn = makeCloseIconButton()
+        let ring = makeCountdownRing(accent: accent, size: 30)
         root.addSubview(metaRow)
         root.addSubview(titleField)
-        root.addSubview(closeBtn)
+        root.addSubview(ring)
 
-        // Inner summary card
         let summaryBox = NSView()
         summaryBox.wantsLayer = true
         summaryBox.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.055).cgColor
-        summaryBox.layer?.cornerRadius = 11
+        summaryBox.layer?.cornerRadius = 12
         summaryBox.layer?.borderWidth = 0.8
         summaryBox.layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
         summaryBox.translatesAutoresizingMaskIntoConstraints = false
@@ -730,7 +1127,6 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         bodyField.translatesAutoresizingMaskIntoConstraints = false
         summaryBox.addSubview(bodyField)
 
-        // Action row
         let actions = NSStackView()
         actions.orientation = .horizontal
         actions.spacing = 10
@@ -744,9 +1140,12 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
                 makeActionButton(
                     title: "切回 \(appLabel) ↩",
                     bg: accent,
+                    gradientBottom: accentBottom,
                     fg: .white,
+                    topHighlight: true,
                     action: #selector(handleFocusTap),
-                    height: 33
+                    height: 34,
+                    corner: 17
                 )
             )
         }
@@ -758,7 +1157,8 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
                     fg: .labelColor,
                     border: NSColor.labelColor.withAlphaComponent(0.14),
                     action: #selector(handleMuteTap),
-                    height: 33
+                    height: 34,
+                    corner: 17
                 )
             )
         }
@@ -773,33 +1173,29 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
                 fg: .labelColor,
                 border: NSColor.labelColor.withAlphaComponent(0.14),
                 action: #selector(handleDismissTap),
-                height: 33
+                height: 34,
+                corner: 17
             )
         )
 
         NSLayoutConstraint.activate([
-            topBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            topBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            topBar.topAnchor.constraint(equalTo: root.topAnchor),
-            topBar.heightAnchor.constraint(equalToConstant: 4),
-
             iconBg.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
-            iconBg.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 16),
+            iconBg.topAnchor.constraint(equalTo: root.topAnchor, constant: 18),
             iconBg.widthAnchor.constraint(equalToConstant: 40),
             iconBg.heightAnchor.constraint(equalToConstant: 40),
 
             iconView.centerXAnchor.constraint(equalTo: iconBg.centerXAnchor),
             iconView.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
 
-            closeBtn.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-            closeBtn.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 14),
+            ring.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+            ring.topAnchor.constraint(equalTo: root.topAnchor, constant: 18),
 
             metaRow.leadingAnchor.constraint(equalTo: iconBg.trailingAnchor, constant: 12),
-            metaRow.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -8),
-            metaRow.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 14),
+            metaRow.trailingAnchor.constraint(lessThanOrEqualTo: ring.leadingAnchor, constant: -8),
+            metaRow.topAnchor.constraint(equalTo: root.topAnchor, constant: 17),
 
             titleField.leadingAnchor.constraint(equalTo: iconBg.trailingAnchor, constant: 12),
-            titleField.trailingAnchor.constraint(equalTo: closeBtn.leadingAnchor, constant: -8),
+            titleField.trailingAnchor.constraint(equalTo: ring.leadingAnchor, constant: -8),
             titleField.topAnchor.constraint(equalTo: metaRow.bottomAnchor, constant: 3),
 
             summaryBox.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
@@ -818,11 +1214,11 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         ])
     }
 
+    // MARK: - Banner (Top Dynamic Capsule with circular countdown)
     private func buildBannerLayout(
         in root: NSView,
-        width: CGFloat,
-        height: CGFloat,
         accent: NSColor,
+        accentBottom: NSColor,
         kind: String,
         agentText: String,
         projectText: String,
@@ -833,22 +1229,22 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
     ) {
         let iconBg = NSView()
         iconBg.wantsLayer = true
-        iconBg.layer?.backgroundColor = accent.withAlphaComponent(0.18).cgColor
-        iconBg.layer?.cornerRadius = 18
+        iconBg.layer?.backgroundColor = accent.cgColor
+        iconBg.layer?.cornerRadius = 16
         iconBg.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(iconBg)
 
         let iconView = NSImageView()
         if let sym = NSImage(systemSymbolName: symbolName(for: kind), accessibilityDescription: nil) {
-            let cfg = NSImage.SymbolConfiguration(pointSize: 17, weight: .bold)
+            let cfg = NSImage.SymbolConfiguration(pointSize: 13.5, weight: .black)
             iconView.image = sym.withSymbolConfiguration(cfg)
-            iconView.contentTintColor = accent
+            iconView.contentTintColor = .white
         }
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconBg.addSubview(iconView)
 
         let subtitlePrefix = durationText.isEmpty ? "\(agentText) · \(projectText)" : "\(agentText) · \(projectText) · \(durationText)"
-        let titleField = NSTextField(labelWithString: "\(titleText)  (\(subtitlePrefix))")
+        let titleField = NSTextField(labelWithString: "\(titleText)  ·  \(subtitlePrefix)")
         titleField.font = NSFont.systemFont(ofSize: 13, weight: .bold)
         titleField.textColor = .labelColor
         titleField.lineBreakMode = .byTruncatingTail
@@ -867,22 +1263,25 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         textCol.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(textCol)
 
-        let closeBtn = makeCloseIconButton()
-        root.addSubview(closeBtn)
+        let ring = makeCountdownRing(accent: accent, size: 28)
+        root.addSubview(ring)
 
-        var rightAnchorTarget = closeBtn.leadingAnchor
+        var rightAnchorTarget = ring.leadingAnchor
         if showFocus {
             let focusBtn = makeActionButton(
                 title: "切回 ↗",
                 bg: accent,
+                gradientBottom: accentBottom,
                 fg: .white,
+                topHighlight: true,
                 action: #selector(handleFocusTap),
-                height: 28
+                height: 28,
+                corner: 14
             )
             root.addSubview(focusBtn)
             NSLayoutConstraint.activate([
                 focusBtn.centerYAnchor.constraint(equalTo: root.centerYAnchor),
-                focusBtn.trailingAnchor.constraint(equalTo: closeBtn.leadingAnchor, constant: -6),
+                focusBtn.trailingAnchor.constraint(equalTo: ring.leadingAnchor, constant: -8),
             ])
             rightAnchorTarget = focusBtn.leadingAnchor
         }
@@ -890,14 +1289,14 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         NSLayoutConstraint.activate([
             iconBg.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
             iconBg.centerYAnchor.constraint(equalTo: root.centerYAnchor),
-            iconBg.widthAnchor.constraint(equalToConstant: 36),
-            iconBg.heightAnchor.constraint(equalToConstant: 36),
+            iconBg.widthAnchor.constraint(equalToConstant: 32),
+            iconBg.heightAnchor.constraint(equalToConstant: 32),
 
             iconView.centerXAnchor.constraint(equalTo: iconBg.centerXAnchor),
             iconView.centerYAnchor.constraint(equalTo: iconBg.centerYAnchor),
 
-            closeBtn.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            closeBtn.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            ring.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -13),
+            ring.centerYAnchor.constraint(equalTo: root.centerYAnchor),
 
             textCol.leadingAnchor.constraint(equalTo: iconBg.trailingAnchor, constant: 11),
             textCol.trailingAnchor.constraint(equalTo: rightAnchorTarget, constant: -10),
@@ -905,15 +1304,15 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         ])
     }
 
-    private func startCountdown(panelWidth: CGFloat) {
-        let interval = 0.05
+    private func startCountdown() {
+        let interval = 0.04
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 if self.isHovered { return }
                 self.remaining -= interval
                 let ratio = max(0.0, min(1.0, self.remaining / self.totalDuration))
-                self.progressWidthConstraint?.constant = panelWidth * CGFloat(ratio)
+                self.countdownRing?.progress = CGFloat(ratio)
                 if self.remaining <= 0 {
                     self.dismiss()
                 }
@@ -965,7 +1364,6 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Best-effort window title raise via AppleScript when a workspace hint is provided
         if !hint.isEmpty && !appName.isEmpty {
             let safeApp = appName.replacingOccurrences(of: "\"", with: "\\\"")
             let safeHint = hint.replacingOccurrences(of: "\"", with: "\\\"")

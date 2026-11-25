@@ -11,6 +11,7 @@ struct MiniConfig: Decodable {
 
 struct MiniPopup: Decodable {
     let style: String?
+    let cardVariant: String?
 }
 
 struct MiniUI: Decodable {
@@ -171,6 +172,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         let dnd = isDnd(cfg)
         let unread = readUnreadCount()
         let curStyle = cfg?.popup?.style ?? "card"
+        let curVariant = cfg?.popup?.cardVariant ?? "pill"
 
         // Header
         let headerTitle = dnd ? "AgentNotices · 免打扰中" : "AgentNotices · 监听中"
@@ -211,6 +213,23 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         }
         styleItem.submenu = styleMenu
         menu.addItem(styleItem)
+
+        // Card appearance variant submenu
+        let variantItem = NSMenuItem(title: "卡片视觉样式", action: nil, keyEquivalent: "")
+        let variantMenu = NSMenu()
+        let variants: [(String, String)] = [
+            ("pill", "紧凑灵动胶囊卡 (默认)"),
+            ("glass", "Apple 液态玻璃"),
+        ]
+        for (val, label) in variants {
+            let item = NSMenuItem(title: label, action: #selector(handleSwitchVariant(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = val
+            item.state = curVariant == val ? .on : .off
+            variantMenu.addItem(item)
+        }
+        variantItem.submenu = variantMenu
+        menu.addItem(variantItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -303,6 +322,11 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     @objc private func handleSwitchStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? String else { return }
         runCLI(["config", "set", "popup.style", style])
+    }
+
+    @objc private func handleSwitchVariant(_ sender: NSMenuItem) {
+        guard let variant = sender.representedObject as? String else { return }
+        runCLI(["config", "set", "popup.cardVariant", variant])
     }
 
     @objc private func handleHistoryClick(_ sender: NSMenuItem) {

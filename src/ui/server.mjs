@@ -185,6 +185,7 @@ export function createUiServer() {
         const popupOverrides = {
           enabled: true,
           style,
+          cardVariant: body.cardVariant || loadConfig().popup?.cardVariant || 'pill',
           position: style === 'modal' ? 'center' : style === 'banner' ? 'top-center' : body.position || loadConfig().popup?.position || 'top-right',
           sticky: Boolean(body.sticky),
           durationSeconds: body.sticky ? 0 : Number(body.popupDuration ?? 8),
