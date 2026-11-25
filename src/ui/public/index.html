@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentNotices · 会话完成多模态提醒控制台</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --bg-soft: #121722;
+      --card: #161c2a;
+      --card-hover: #1c2436;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.16);
+      --green: #22c55e;
+      --green-soft: rgba(34, 197, 94, 0.15);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.15);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.15);
+      --radius: 14px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f8fb;
+        --bg-soft: #ffffff;
+        --card: #ffffff;
+        --card-hover: #f8fafc;
+        --border: rgba(15, 23, 42, 0.09);
+        --border-strong: rgba(15, 23, 42, 0.18);
+        --text: #0f172a;
+        --muted: #64748b;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    aside {
+      width: 244px;
+      background: var(--bg-soft);
+      border-right: 1px solid var(--border);
+      padding: 20px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #22c55e, #3b82f6);
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      color: #fff;
+      font-weight: 700;
+    }
+    .brand h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+    .brand span { font-size: 11px; color: var(--muted); display: block; }
+    .nav-btn {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13.5px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover { background: var(--card-hover); color: var(--text); }
+    .nav-btn.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+    .badge {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .badge.green { background: var(--green-soft); color: var(--green); }
+    .badge.amber { background: var(--amber-soft); color: var(--amber); }
+    .badge.red { background: var(--red-soft); color: var(--red); }
+    .badge.muted { background: var(--border); color: var(--muted); }
+    .aside-footer {
+      margin-top: auto;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    main {
+      flex: 1;
+      padding: 28px 34px;
+      max-width: 1040px;
+      width: 100%;
+    }
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 22px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .header-bar h2 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+    .header-bar p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .section { display: none; flex-direction: column; gap: 18px; }
+    .section.active { display: flex; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .card h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: 650;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .card .desc { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .row:last-child { border-bottom: none; padding-bottom: 0; }
+    .row label { font-weight: 500; font-size: 13.5px; }
+    .row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    input[type="text"], input[type="password"], input[type="number"], input[type="time"], select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      padding: 7px 10px;
+      font-size: 13px;
+      outline: none;
+      min-width: 140px;
+    }
+    input[type="text"].wide, input[type="password"].wide { width: 100%; }
+    input:focus, select:focus { border-color: var(--accent); }
+    .btn {
+      border: 1px solid var(--border-strong);
+      background: var(--bg-soft);
+      color: var(--text);
+      border-radius: 9px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover { background: var(--card-hover); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { filter: brightness(1.08); }
+    .btn.green { background: var(--green); border-color: var(--green); color: #fff; }
+    .btn.amber { background: var(--amber); border-color: var(--amber); color: #111; }
+    .btn.red { background: var(--red); border-color: var(--red); color: #fff; }
+    .btn.sm { padding: 5px 10px; font-size: 12px; }
+    .style-card {
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      cursor: pointer;
+      background: var(--bg);
+      transition: all 0.15s;
+    }
+    .style-card:hover { border-color: var(--border-strong); }
+    .style-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+    .style-card strong { display: block; margin-bottom: 4px; font-size: 13.5px; }
+    .style-card span { color: var(--muted); font-size: 12px; }
+    .form-grid { display: grid; gap: 10px; margin-top: 10px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: var(--border-strong);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .slider:before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    input:checked + .slider { background: var(--green); }
+    input:checked + .slider:before { transform: translateX(18px); }
+    .hist-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 13px 14px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--bg);
+    }
+    .hist-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 4px; }
+    .hist-msg { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+    #toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      background: #111827;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: all 0.2s;
+      z-index: 999;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  </style>
+</head>
+<body>
+  <aside>
+    <div class="brand">
+      <div class="brand-icon">🔔</div>
+      <div>
+        <h1>AgentNotices</h1>
+        <span>多模态会话任务提醒</span>
+      </div>
+    </div>
+    <button class="nav-btn active" data-tab="popup"><span>🪟 弹窗与声音</span></button>
+    <button class="nav-btn" data-tab="hooks"><span>🔌 Agent 接入</span><span id="nav-hooks-badge" class="badge muted">0</span></button>
+    <button class="nav-btn" data-tab="policy"><span>🧠 分级防打扰</span></button>
+    <button class="nav-btn" data-tab="webhooks"><span>📡 远程推送通道</span></button>
+    <button class="nav-btn" data-tab="history"><span>📜 历史记录</span><span id="nav-unread-badge" class="badge green">0</span></button>
+
+    <div class="aside-footer">
+      <button id="btn-menubar" class="btn sm" style="width:100%;justify-content:center;">启动菜单栏常驻助手</button>
+      <button id="btn-save-all" class="btn primary sm" style="width:100%;justify-content:center;">💾 保存全部配置</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="header-bar">
+      <div>
+        <h2 id="page-title">弹窗工坊与声音提醒</h2>
+        <p id="status-line">正在加载配置…</p>
+      </div>
+      <div class="toolbar">
+        <button id="btn-dnd-toggle" class="btn">🔕 免打扰</button>
+        <button id="btn-pause-30" class="btn">⏱ 静音 30m</button>
+      </div>
+    </div>
+
+    <!-- TAB 1: Popup & Sound -->
+    <section id="tab-popup" class="section active">
+      <div class="card">
+        <h3>
+          <span>原生桌面弹窗工坊（实时预览）</span>
+          <span id="native-badge" class="badge green">macOS 原生 AppKit</span>
+        </h3>
+        <p class="desc">原生无焦点抢占毛玻璃浮窗，跨 Space 与全屏应用可见，支持点击一键切回 Antigravity / IDE / 终端。</p>
+        <div class="grid-3" id="style-picker">
+          <div class="style-card" data-style="card">
+            <strong>角落悬浮卡片 (Card)</strong>
+            <span>毛玻璃圆角卡片，多条自动堆叠、悬停暂停倒计时、不打断输入</span>
+          </div>
+          <div class="style-card" data-style="modal">
+            <strong>屏幕居中强弹窗 (Modal)</strong>
+            <span>黄金居中醒目大卡片，适合长任务完成、报错或待确认审批</span>
+          </div>
+          <div class="style-card" data-style="banner">
+            <strong>顶部灵动横幅 (Banner)</strong>
+            <span>屏幕顶部胶囊横幅，轻盈不挡主视野，支持一键切回原窗口</span>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top: 14px;">
+          <button class="btn green" onclick="fireTest('done', false)">▶ 测试「任务完成」弹窗</button>
+          <button class="btn amber" onclick="fireTest('attention', true)">▶ 测试「常驻待确认」强弹窗</button>
+          <button class="btn red" onclick="fireTest('error', true)">▶ 测试「执行报错」弹窗</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>弹窗行为配置</h3>
+          <div class="row">
+            <div><label>启用桌面弹窗</label><small>关闭后仅保留声音/系统通知/Webhook</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-popup-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="row">
+            <div><label>长任务/报错升级样式</label><small>超过升级耗时阈值或报错时自动切换</small></div>
+            <select id="cfg-popup-escalatedStyle">
+              <option value="modal">居中强弹窗 (Modal)</option>
+              <option value="card">角落卡片 (Card)</option>
+              <option value="banner">顶部横幅 (Banner)</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><label>默认停靠位置</label></div>
+            <select id="cfg-popup-position">
+              <option value="top-right">屏幕右上角</option>
+              <option value="bottom-right">屏幕右下角</option>
+              <option value="top-center">屏幕顶部居中</option>
+              <option value="center">屏幕正中央</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><label>自动关闭秒数</label><small>填 0 则默认常驻直到手动点击关闭</small></div>
+            <input type="number" id="cfg-popup-durationSeconds" min="0" max="120" style="width:90px" />
+          </div>
+          <div class="row">
+            <div><label>报错 / 待确认强制常驻</label><small>不自动消失，防止错过关键卡点</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-popup-stickyOnAttention"><span class="slider"></span></label>
+          </div>
+          <div class="row">
+            <div><label>同时发 macOS 通知中心</label><small>原生弹窗已开启时一般无需重复开启</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-sys-enabled"><span class="slider"></span></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>音效与中文语音播报 (TTS)</h3>
+          <div class="row">
+            <div><label>启用提示音效</label><small>不同事件类型可配不同系统音效或音频路径</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-sound-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="row">
+            <div><label>完成提示音</label></div>
+            <select id="cfg-sound-done"></select>
+          </div>
+          <div class="row">
+            <div><label>待确认提示音</label></div>
+            <select id="cfg-sound-attention"></select>
+          </div>
+          <div class="row">
+            <div><label>报错提示音</label></div>
+            <select id="cfg-sound-error"></select>
+          </div>
+          <div class="row">
+            <div><label>启用 TTS 语音播报</label><small>调用系统语音朗读项目名与状态</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-tts-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <label>语音播报模板（支持 {agent} {project} {title} {duration}）</label>
+            <input type="text" class="wide" id="cfg-tts-template" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: Agent Hooks -->
+    <section id="tab-hooks" class="section">
+      <div class="card">
+        <h3>
+          <span>一键安全接入 AI 编程工具 Hooks</span>
+          <button class="btn primary sm" onclick="installAgent('auto')">⚡ 自动接入已检测工具</button>
+        </h3>
+        <p class="desc">幂等合并写入配置并自动生成 .bak 备份，采用后台异步派发架构（Hook 20ms 内返回），绝不阻塞 Agent 会话。</p>
+        <div id="hooks-list" class="grid-2"></div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Smart Policy -->
+    <section id="tab-policy" class="section">
+      <div class="grid-2">
+        <div class="card">
+          <h3>耗时阈值与分级防打扰</h3>
+          <div class="row">
+            <div><label>最短提醒耗时（秒）</label><small>快于该秒数的普通短回合静默不打扰（报错/待确认除外）</small></div>
+            <input type="number" id="cfg-policy-minDurationSeconds" min="0" max="600" style="width:90px" />
+          </div>
+          <div class="row">
+            <div><label>长任务升级阈值（秒）</label><small>达到该时长自动升级为强弹窗样式</small></div>
+            <input type="number" id="cfg-policy-escalateDurationSeconds" min="0" max="3600" style="width:90px" />
+          </div>
+          <div class="row">
+            <div><label>忽略用户手动取消</label><small>手动 Stop/中断任务时不弹窗</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-policy-ignoreUserCanceled"><span class="slider"></span></label>
+          </div>
+          <div class="row">
+            <div><label>正在使用目标 IDE 时的策略</label><small>检测前台应用就是当前触发工具时</small></div>
+            <select id="cfg-policy-whenTargetFocused">
+              <option value="never">照常提醒</option>
+              <option value="downgrade">降级为顶部轻横幅（静音）</option>
+              <option value="suppress">静默不弹窗</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><label>免打扰时段 (Quiet Hours)</label><small>夜间定时静默，支持跨零点</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-quiet-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="row">
+            <label>起止时间</label>
+            <div class="toolbar">
+              <input type="time" id="cfg-quiet-start" /> <span>至</span> <input type="time" id="cfg-quiet-end" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>任务结果摘要引擎</h3>
+          <div class="row">
+            <div><label>离线解析会话记录</label><small>自动读取 Antigravity / Claude transcript 尾部提取最后结论</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-summary-readTranscript"><span class="slider"></span></label>
+          </div>
+          <div class="row">
+            <div><label>启用 LLM 精炼摘要（可选）</label><small>支持任意 OpenAI 兼容接口，超时自动降级离线摘要</small></div>
+            <label class="switch"><input type="checkbox" id="cfg-llm-enabled"><span class="slider"></span></label>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Base URL</label>
+              <input type="text" class="wide" id="cfg-llm-baseUrl" placeholder="https://api.openai.com/v1" />
+            </div>
+            <div class="field">
+              <label>API Key</label>
+              <input type="password" class="wide" id="cfg-llm-apiKey" placeholder="sk-..." />
+            </div>
+            <div class="field">
+              <label>模型名称</label>
+              <input type="text" class="wide" id="cfg-llm-model" placeholder="gpt-4o-mini" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: Webhooks -->
+    <section id="tab-webhooks" class="section">
+      <div class="grid-2" id="webhooks-grid"></div>
+    </section>
+
+    <!-- TAB 5: History -->
+    <section id="tab-history" class="section">
+      <div class="card">
+        <h3>
+          <span>会话提醒历史</span>
+          <div class="toolbar">
+            <select id="hist-filter-agent" onchange="loadHistory()">
+              <option value="">全部工具</option>
+              <option value="antigravity">Antigravity</option>
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex CLI</option>
+              <option value="cursor">Cursor</option>
+              <option value="cli">CLI</option>
+            </select>
+            <button class="btn sm" onclick="markAllReadUi()">✓ 全部已读</button>
+            <button class="btn sm" onclick="clearHistoryUi()">🗑 清空</button>
+          </div>
+        </h3>
+        <div id="history-list" class="form-grid" style="margin-top: 12px;"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+
+  <script>
+    let state = null;
+    const TITLES = {
+      popup: '弹窗工坊与声音提醒',
+      hooks: 'Agent Hooks 一键接入管理',
+      policy: '智能分级与防打扰策略',
+      webhooks: '远程多通道推送（飞书 / 钉钉 / 企微 / Bark / Telegram / ntfy）',
+      history: '会话完成提醒历史记录',
+    };
+
+    const WEBHOOK_SPECS = [
+      { key: 'feishu', name: '飞书机器人 (Feishu / Lark)', fields: [
+        { k: 'url', label: 'Webhook URL', placeholder: 'https://open.feishu.cn/open-apis/bot/v2/hook/...' },
+        { k: 'secret', label: '签名密钥（可选）', type: 'password', placeholder: '若开启签名校验则填写' },
+      ]},
+      { key: 'dingtalk', name: '钉钉机器人 (DingTalk)', fields: [
+        { k: 'url', label: 'Webhook URL', placeholder: 'https://oapi.dingtalk.com/robot/send?access_token=...' },
+        { k: 'secret', label: '加签密钥（可选）', type: 'password', placeholder: 'SEC...' },
+      ]},
+      { key: 'wecom', name: '企业微信机器人 (WeCom)', fields: [
+        { k: 'url', label: 'Webhook URL', placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' },
+      ]},
+      { key: 'bark', name: 'Bark (iOS 强推送)', fields: [
+        { k: 'serverUrl', label: '服务器地址', placeholder: 'https://api.day.app' },
+        { k: 'deviceKey', label: 'Device Key', type: 'password', placeholder: '你的 Bark Key' },
+        { k: 'sound', label: '铃声名', placeholder: 'bell' },
+      ]},
+      { key: 'telegram', name: 'Telegram Bot', fields: [
+        { k: 'botToken', label: 'Bot Token', type: 'password', placeholder: '123456:ABC-DEF...' },
+        { k: 'chatId', label: 'Chat ID', placeholder: '你的用户或群组 Chat ID' },
+      ]},
+      { key: 'ntfy', name: 'ntfy 手机/桌面推送', fields: [
+        { k: 'url', label: '服务器地址', placeholder: 'https://ntfy.sh' },
+        { k: 'topic', label: 'Topic 主题', placeholder: 'my-agent-notices' },
+        { k: 'token', label: 'Access Token（可选）', type: 'password', placeholder: 'tk_...' },
+      ]},
+      { key: 'custom', name: '自定义 JSON Webhook', fields: [
+        { k: 'url', label: 'Endpoint URL', placeholder: 'https://example.com/hook' },
+        { k: 'method', label: 'HTTP Method', placeholder: 'POST' },
+      ]},
+    ];
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+    }
+
+    document.querySelectorAll('.nav-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        document.querySelectorAll('.section').forEach((s) => s.classList.toggle('active', s.id === `tab-${tab}`));
+        document.getElementById('page-title').textContent = TITLES[tab] || 'AgentNotices';
+        if (tab === 'history') loadHistory();
+      });
+    });
+
+    document.querySelectorAll('.style-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        if (!state) return;
+        state.config.popup.style = card.dataset.style;
+        renderStylePicker();
+        saveCurrentConfig(false);
+      });
+    });
+
+    function renderStylePicker() {
+      const cur = state?.config?.popup?.style || 'card';
+      document.querySelectorAll('.style-card').forEach((c) => {
+        c.classList.toggle('selected', c.dataset.style === cur);
+      });
+    }
+
+    function fillSoundSelects(sounds, cfg) {
+      const list = sounds && sounds.length ? sounds : ['Glass', 'Ping', 'Basso', 'Hero', 'Submarine', 'Pop', 'Purr'];
+      for (const kind of ['done', 'attention', 'error']) {
+        const sel = document.getElementById(`cfg-sound-${kind}`);
+        sel.innerHTML = list.map((s) => `<option value="${s}">${s}</option>`).join('');
+        sel.value = cfg.sound[kind] || 'Glass';
+      }
+    }
+
+    function renderHooks() {
+      const container = document.getElementById('hooks-list');
+      const hooks = state.hooks || {};
+      let installedCount = 0;
+      container.innerHTML = Object.entries(hooks).map(([key, info]) => {
+        if (info.installed) installedCount++;
+        return `
+          <div class="card" style="background:var(--bg)">
+            <h3>
+              <span>${info.name}</span>
+              <span class="badge ${info.installed ? 'green' : info.detected ? 'amber' : 'muted'}">
+                ${info.installed ? '已接入' : info.detected ? '已检测到 · 未接入' : '未检测到'}
+              </span>
+            </h3>
+            <p class="desc" style="word-break:break-all;margin-bottom:12px;">${info.configPath}</p>
+            <div class="toolbar">
+              ${info.installed
+                ? `<button class="btn sm" onclick="uninstallAgent('${key}')">卸载 Hook</button>
+                   <button class="btn sm" onclick="installAgent('${key}')">重新写入</button>`
+                : `<button class="btn primary sm" onclick="installAgent('${key}')">一键接入</button>`
+              }
+            </div>
+          </div>
+        `;
+      }).join('');
+      const badge = document.getElementById('nav-hooks-badge');
+      badge.textContent = `${installedCount}/4`;
+      badge.className = `badge ${installedCount > 0 ? 'green' : 'muted'}`;
+    }
+
+    function renderWebhooks() {
+      const grid = document.getElementById('webhooks-grid');
+      const wh = state.config.webhooks || {};
+      grid.innerHTML = WEBHOOK_SPECS.map((spec) => {
+        const cfg = wh[spec.key] || {};
+        const fieldsHtml = spec.fields.map((f) => `
+          <div class="field">
+            <label>${f.label}</label>
+            <input type="${f.type || 'text'}" class="wide" data-wh="${spec.key}" data-field="${f.k}"
+              value="${escapeAttr(cfg[f.k] ?? '')}" placeholder="${f.placeholder || ''}" />
+          </div>
+        `).join('');
+        return `
+          <div class="card">
+            <h3>
+              <span>${spec.name}</span>
+              <label class="switch">
+                <input type="checkbox" data-wh="${spec.key}" data-field="enabled" ${cfg.enabled ? 'checked' : ''} />
+                <span class="slider"></span>
+              </label>
+            </h3>
+            <div class="form-grid">${fieldsHtml}</div>
+            <div class="toolbar" style="margin-top:12px;">
+              <button class="btn sm" onclick="testWebhook('${spec.key}')">📤 发送测试消息</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function escapeAttr(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function bindStateToForm() {
+      const c = state.config;
+      document.getElementById('status-line').textContent = state.dnd.active
+        ? `当前处于免打扰状态 (${state.dnd.reason}${state.dnd.until ? ' · 至 ' + new Date(state.dnd.until).toLocaleTimeString() : ''})`
+        : `监听运行中 · 配置文件：${state.configPath}`;
+      document.getElementById('btn-dnd-toggle').textContent = state.dnd.active ? '🔔 恢复提醒' : '🔕 开启免打扰';
+      document.getElementById('native-badge').textContent = state.nativePopupReady ? '✓ macOS 原生 AppKit 已就绪' : '系统通知回退模式';
+      document.getElementById('nav-unread-badge').textContent = state.unread || 0;
+
+      renderStylePicker();
+      document.getElementById('cfg-popup-enabled').checked = c.popup.enabled !== false;
+      document.getElementById('cfg-popup-escalatedStyle').value = c.popup.escalatedStyle || 'modal';
+      document.getElementById('cfg-popup-position').value = c.popup.position || 'top-right';
+      document.getElementById('cfg-popup-durationSeconds').value = c.popup.durationSeconds ?? 10;
+      document.getElementById('cfg-popup-stickyOnAttention').checked = c.popup.stickyOnAttention !== false;
+      document.getElementById('cfg-sys-enabled').checked = Boolean(c.systemNotification?.enabled);
+
+      document.getElementById('cfg-sound-enabled').checked = c.sound.enabled !== false;
+      fillSoundSelects(state.sounds, c);
+      document.getElementById('cfg-tts-enabled').checked = Boolean(c.tts.enabled);
+      document.getElementById('cfg-tts-template').value = c.tts.template || '{project}，{title}';
+
+      document.getElementById('cfg-policy-minDurationSeconds').value = c.policy.minDurationSeconds ?? 5;
+      document.getElementById('cfg-policy-escalateDurationSeconds').value = c.policy.escalateDurationSeconds ?? 30;
+      document.getElementById('cfg-policy-ignoreUserCanceled').checked = c.policy.ignoreUserCanceled !== false;
+      document.getElementById('cfg-policy-whenTargetFocused').value = c.policy.whenTargetFocused || 'never';
+      document.getElementById('cfg-quiet-enabled').checked = Boolean(c.quietHours?.enabled);
+      document.getElementById('cfg-quiet-start').value = c.quietHours?.start || '23:00';
+      document.getElementById('cfg-quiet-end').value = c.quietHours?.end || '08:00';
+
+      document.getElementById('cfg-summary-readTranscript').checked = c.summary.readTranscript !== false;
+      document.getElementById('cfg-llm-enabled').checked = Boolean(c.summary.llm?.enabled);
+      document.getElementById('cfg-llm-baseUrl').value = c.summary.llm?.baseUrl || '';
+      document.getElementById('cfg-llm-apiKey').value = c.summary.llm?.apiKey || '';
+      document.getElementById('cfg-llm-model').value = c.summary.llm?.model || 'gpt-4o-mini';
+
+      renderHooks();
+      renderWebhooks();
+    }
+
+    function collectConfigFromForm() {
+      const c = structuredClone(state.config);
+      c.popup.enabled = document.getElementById('cfg-popup-enabled').checked;
+      c.popup.escalatedStyle = document.getElementById('cfg-popup-escalatedStyle').value;
+      c.popup.position = document.getElementById('cfg-popup-position').value;
+      c.popup.durationSeconds = Number(document.getElementById('cfg-popup-durationSeconds').value || 0);
+      c.popup.stickyOnAttention = document.getElementById('cfg-popup-stickyOnAttention').checked;
+      c.systemNotification.enabled = document.getElementById('cfg-sys-enabled').checked;
+
+      c.sound.enabled = document.getElementById('cfg-sound-enabled').checked;
+      c.sound.done = document.getElementById('cfg-sound-done').value;
+      c.sound.attention = document.getElementById('cfg-sound-attention').value;
+      c.sound.error = document.getElementById('cfg-sound-error').value;
+      c.tts.enabled = document.getElementById('cfg-tts-enabled').checked;
+      c.tts.template = document.getElementById('cfg-tts-template').value;
+
+      c.policy.minDurationSeconds = Number(document.getElementById('cfg-policy-minDurationSeconds').value || 0);
+      c.policy.escalateDurationSeconds = Number(document.getElementById('cfg-policy-escalateDurationSeconds').value || 0);
+      c.policy.ignoreUserCanceled = document.getElementById('cfg-policy-ignoreUserCanceled').checked;
+      c.policy.whenTargetFocused = document.getElementById('cfg-policy-whenTargetFocused').value;
+      c.quietHours.enabled = document.getElementById('cfg-quiet-enabled').checked;
+      c.quietHours.start = document.getElementById('cfg-quiet-start').value;
+      c.quietHours.end = document.getElementById('cfg-quiet-end').value;
+
+      c.summary.readTranscript = document.getElementById('cfg-summary-readTranscript').checked;
+      c.summary.llm.enabled = document.getElementById('cfg-llm-enabled').checked;
+      c.summary.llm.baseUrl = document.getElementById('cfg-llm-baseUrl').value.trim();
+      c.summary.llm.apiKey = document.getElementById('cfg-llm-apiKey').value.trim();
+      c.summary.llm.model = document.getElementById('cfg-llm-model').value.trim();
+
+      document.querySelectorAll('[data-wh]').forEach((el) => {
+        const wh = el.dataset.wh;
+        const field = el.dataset.field;
+        if (!c.webhooks[wh]) c.webhooks[wh] = {};
+        c.webhooks[wh][field] = el.type === 'checkbox' ? el.checked : el.value.trim();
+      });
+      return c;
+    }
+
+    async function loadState() {
+      const resp = await fetch('/api/state');
+      state = await resp.json();
+      bindStateToForm();
+    }
+
+    async function saveCurrentConfig(notify = true) {
+      const next = collectConfigFromForm();
+      const resp = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        state.config = data.config;
+        state.dnd = data.dnd;
+        if (notify) showToast('✓ 配置已保存并实时生效');
+      }
+    }
+
+    async function fireTest(kind, sticky) {
+      await saveCurrentConfig(false);
+      const style = state.config.popup.style;
+      const resp = await fetch('/api/test/popup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, style, sticky }),
+      });
+      const data = await resp.json();
+      showToast(data.ok ? `✓ 已触发 ${style} 弹窗预览` : '触发失败');
+      loadState();
+    }
+
+    async function testWebhook(channel) {
+      const cfg = collectConfigFromForm();
+      await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg),
+      });
+      const resp = await fetch('/api/test/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel, channelConfig: cfg.webhooks[channel] }),
+      });
+      const data = await resp.json();
+      showToast(data.ok ? `✓ ${channel} 测试消息发送成功` : `✕ ${channel} 失败：${data.result?.error || data.result?.status || '检查配置'}`);
+    }
+
+    async function installAgent(agent) {
+      const resp = await fetch('/api/hooks/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent }),
+      });
+      const data = await resp.json();
+      state.hooks = data.hooks;
+      renderHooks();
+      showToast(data.ok ? `✓ 已接入 ${agent} Hook` : `部分接入失败：${data.results?.map(r => r.error).filter(Boolean).join('; ')}`);
+    }
+
+    async function uninstallAgent(agent) {
+      const resp = await fetch('/api/hooks/uninstall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent }),
+      });
+      const data = await resp.json();
+      state.hooks = data.hooks;
+      renderHooks();
+      showToast(`✓ 已卸载 ${agent} Hook`);
+    }
+
+    async function loadHistory() {
+      const agent = document.getElementById('hist-filter-agent').value;
+      const resp = await fetch(`/api/history?limit=60${agent ? '&agent=' + encodeURIComponent(agent) : ''}`);
+      const data = await resp.json();
+      document.getElementById('nav-unread-badge').textContent = data.unread || 0;
+      const box = document.getElementById('history-list');
+      if (!data.items || data.items.length === 0) {
+        box.innerHTML = '<div style="color:var(--muted);padding:16px;text-align:center;">暂无会话提醒历史</div>';
+        return;
+      }
+      box.innerHTML = data.items.map((it) => {
+        const cls = it.kind === 'error' ? 'red' : it.kind === 'attention' ? 'amber' : 'green';
+        const time = new Date(it.timestamp).toLocaleString();
+        const dur = it.durationMs ? `${Math.round(it.durationMs / 1000)}s` : '';
+        const focusBtn = it.focusTarget?.appName
+          ? `<button class="btn sm" onclick='focusTarget(${JSON.stringify(it.focusTarget)})'>切回 ${escapeHtml(it.focusTarget.appName)} ↗</button>`
+          : '';
+        return `
+          <div class="hist-item">
+            <div>
+              <div class="hist-meta">
+                <span class="badge ${cls}">${escapeHtml(it.agentLabel || it.agent)}</span>
+                <strong>${escapeHtml(it.project || 'Workspace')} · ${escapeHtml(it.title || '')}</strong>
+                ${dur ? `<span class="badge muted">⏱ ${dur}</span>` : ''}
+                <span style="color:var(--muted);font-size:11.5px;">${time}</span>
+              </div>
+              <p class="hist-msg">${escapeHtml(it.message || '')}</p>
+            </div>
+            ${focusBtn}
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function focusTarget(target) {
+      await fetch('/api/focus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ focusTarget: target }),
+      });
+    }
+
+    async function markAllReadUi() {
+      await fetch('/api/history/read-all', { method: 'POST' });
+      loadHistory();
+      showToast('✓ 已全部标为已读');
+    }
+
+    async function clearHistoryUi() {
+      await fetch('/api/history', { method: 'DELETE' });
+      loadHistory();
+      showToast('✓ 历史记录已清空');
+    }
+
+    document.getElementById('btn-save-all').addEventListener('click', () => saveCurrentConfig(true));
+    document.getElementById('btn-dnd-toggle').addEventListener('click', async () => {
+      await fetch('/api/dnd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !state.dnd.active }),
+      });
+      await loadState();
+      showToast(state.dnd.active ? '🔕 已开启免打扰' : '🔔 已恢复提醒');
+    });
+    document.getElementById('btn-pause-30').addEventListener('click', async () => {
+      await fetch('/api/dnd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true, minutes: 30 }),
+      });
+      await loadState();
+      showToast('⏱ 已静音 30 分钟');
+    });
+    document.getElementById('btn-menubar').addEventListener('click', async () => {
+      const resp = await fetch('/api/menubar/start', { method: 'POST' });
+      const data = await resp.json();
+      showToast(data.ok ? '✓ 已启动 macOS 菜单栏助手' : data.error || '启动失败');
+    });
+
+    loadState();
+  </script>
+</body>
+</html>

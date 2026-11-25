@@ -1,0 +1,44 @@
+{
+  "name": "agent-notices",
+  "version": "0.1.0",
+  "description": "Multi-modal desktop popup, sound/TTS, menubar & webhook notifications for Antigravity, Claude Code, Codex, Cursor and CLI tasks.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "agent-notices": "./bin/agent-notices.mjs",
+    "notices": "./bin/agent-notices.mjs"
+  },
+  "scripts": {
+    "build:macos": "bash src/native/macos/build.sh",
+    "test": "node --test test/*.test.mjs",
+    "ui": "node bin/agent-notices.mjs ui",
+    "menubar": "node bin/agent-notices.mjs menubar"
+  },
+  "keywords": [
+    "antigravity",
+    "claude-code",
+    "codex",
+    "cursor",
+    "ai-agent",
+    "notifications",
+    "popup",
+    "macos",
+    "hooks",
+    "webhook",
+    "feishu",
+    "dingtalk",
+    "bark",
+    "telegram"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jzPPP3333/agent-notices.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jzPPP3333/agent-notices/issues"
+  },
+  "homepage": "https://github.com/jzPPP3333/agent-notices#readme"
+}
