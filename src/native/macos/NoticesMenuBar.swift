@@ -402,6 +402,7 @@ let dataDir = argValue("--data-dir") ?? ProcessInfo.processInfo.environment["AGE
 
 MainActor.assumeIsolated {
     let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
     let delegate = MenuBarAppDelegate(cliPath: cliPath, nodePath: nodePath, dataDir: dataDir)
     app.delegate = delegate
     app.run()

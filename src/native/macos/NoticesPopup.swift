@@ -403,7 +403,8 @@ final class NoticePanel: NSPanel {
     var onEscape: (() -> Void)?
     var onReturn: (() -> Void)?
 
-    override var canBecomeKey: Bool { true }
+    // Strictly never take key or main window focus so typing / IME in other apps is never interrupted
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     // Allow off-screen start/end frames so the panel can slide cleanly out from and back into the screen edge
@@ -636,9 +637,12 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = style == "modal" ? .statusBar : .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.worksWhenModal = true
+        panel.isFloatingPanel = true
         if let appearance = resolveAppearance() {
             panel.appearance = appearance
         }
@@ -776,7 +780,7 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
 
         panel.setFrame(startFrame, display: true)
         panel.alphaValue = startAlpha
-        panel.orderFrontRegardless()
+        panel.order(.above, relativeTo: 0)
 
         // Slight runloop yield ensures WindowServer registers the off-screen start frame before animating in
         DispatchQueue.main.async {
@@ -1606,6 +1610,7 @@ guard let payload = parsePayloadFromArgs() else {
 
 MainActor.assumeIsolated {
     let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
     let delegate = PopupAppDelegate(payload: payload)
     app.delegate = delegate
     app.run()

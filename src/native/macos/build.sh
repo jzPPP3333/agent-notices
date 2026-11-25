@@ -22,6 +22,7 @@ swiftc -O \
   -framework AppKit \
   -framework Foundation \
   -framework QuartzCore \
+  -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$SRC_DIR/PopupInfo.plist" \
   "$SRC_DIR/NoticesPopup.swift" \
   -o "$OUT_DIR/NoticesPopup"
 
@@ -29,6 +30,7 @@ echo "Building NoticesMenuBar..."
 swiftc -O \
   -framework AppKit \
   -framework Foundation \
+  -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$SRC_DIR/MenuBarInfo.plist" \
   "$SRC_DIR/NoticesMenuBar.swift" \
   -o "$OUT_DIR/NoticesMenuBar"
 
