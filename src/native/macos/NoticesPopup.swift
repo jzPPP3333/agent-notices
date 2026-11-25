@@ -326,6 +326,11 @@ final class NoticePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    // Allow off-screen start/end frames so the panel can slide cleanly out from and back into the screen edge
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        return frameRect
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // Escape
             onEscape?()
@@ -351,6 +356,8 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
     private var isHovered: Bool = false
     private var isSticky: Bool = false
     private var isDismissing: Bool = false
+    private var slideExitMode: String = "right"
+    private var activeScreenFrame: NSRect = .zero
 
     init(payload: PopupPayload) {
         self.payload = payload
@@ -641,46 +648,64 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
 
         // Compute target frame on active screen
         let screen = activeScreen()
+        let sf = screen.frame
         let vf = screen.visibleFrame
+        self.activeScreenFrame = sf
         let pos = (payload.position ?? (style == "modal" ? "center" : style == "banner" ? "top-center" : "top-right")).lowercased()
 
         let targetOrigin: NSPoint
         let startOrigin: NSPoint
+        let startAlpha: CGFloat
 
         if style == "modal" || pos == "center" {
+            self.slideExitMode = "center"
             let x = vf.midX - panelWidth / 2.0
             let y = vf.midY - panelHeight / 2.0 + vf.height * 0.05
             targetOrigin = NSPoint(x: x, y: y)
-            startOrigin = NSPoint(x: x, y: y - 16)
+            startOrigin = NSPoint(x: x, y: y - 18)
+            startAlpha = 0.0
         } else if style == "banner" || pos == "top-center" {
+            self.slideExitMode = "top"
             let slot = slotManager.acquire(maxSlots: 4)
             let x = vf.midX - panelWidth / 2.0
             let y = vf.maxY - panelHeight - 12 - CGFloat(slot) * (panelHeight + 10)
             targetOrigin = NSPoint(x: x, y: y)
-            startOrigin = NSPoint(x: x, y: y + 20)
+            startOrigin = NSPoint(x: x, y: sf.maxY + 10)
+            startAlpha = 0.92
         } else if pos == "bottom-right" {
+            self.slideExitMode = "right"
             let slot = slotManager.acquire(maxSlots: 5)
-            let x = vf.maxX - panelWidth - 16
+            let x = vf.maxX - panelWidth - 14
             let y = vf.minY + 16 + CGFloat(slot) * (panelHeight + 12)
             targetOrigin = NSPoint(x: x, y: y)
-            startOrigin = NSPoint(x: x + 28, y: y)
+            startOrigin = NSPoint(x: sf.maxX + 12, y: y)
+            startAlpha = 0.94
         } else {
+            // Default top-right: slide out cleanly from the right edge of the screen like native macOS Notification Center
+            self.slideExitMode = "right"
             let slot = slotManager.acquire(maxSlots: 5)
-            let x = vf.maxX - panelWidth - 16
-            let y = vf.maxY - panelHeight - 14 - CGFloat(slot) * (panelHeight + 12)
+            let x = vf.maxX - panelWidth - 14
+            let y = vf.maxY - panelHeight - 12 - CGFloat(slot) * (panelHeight + 12)
             targetOrigin = NSPoint(x: x, y: y)
-            startOrigin = NSPoint(x: x + 28, y: y)
+            startOrigin = NSPoint(x: sf.maxX + 12, y: y)
+            startAlpha = 0.94
         }
 
-        panel.setFrameOrigin(startOrigin)
-        panel.alphaValue = 0.0
+        let startFrame = NSRect(origin: startOrigin, size: NSSize(width: panelWidth, height: panelHeight))
+        let targetFrame = NSRect(origin: targetOrigin, size: NSSize(width: panelWidth, height: panelHeight))
+
+        panel.setFrame(startFrame, display: true)
+        panel.alphaValue = startAlpha
         panel.orderFrontRegardless()
 
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.26
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrameOrigin(targetOrigin)
-            panel.animator().alphaValue = 1.0
+        // Slight runloop yield ensures WindowServer registers the off-screen start frame before animating in
+        DispatchQueue.main.async {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = self.slideExitMode == "center" ? 0.24 : 0.36
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.30, 1.0)
+                panel.animator().setFrame(targetFrame, display: true)
+                panel.animator().alphaValue = 1.0
+            }
         }
 
         if !isSticky {
@@ -1405,10 +1430,25 @@ final class PopupAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        let currentFrame = panel.frame
+        var exitFrame = currentFrame
+        let exitAlpha: CGFloat
+        if slideExitMode == "right" {
+            exitFrame.origin.x = activeScreenFrame.maxX + 18
+            exitAlpha = 0.85
+        } else if slideExitMode == "top" {
+            exitFrame.origin.y = activeScreenFrame.maxY + 12
+            exitAlpha = 0.85
+        } else {
+            exitFrame.origin.y -= 12
+            exitAlpha = 0.0
+        }
+
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.20
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().alphaValue = 0.0
+            ctx.duration = slideExitMode == "center" ? 0.20 : 0.26
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.40, 0.0, 0.85, 0.20)
+            panel.animator().setFrame(exitFrame, display: true)
+            panel.animator().alphaValue = exitAlpha
         }, completionHandler: { [weak self] in
             Task { @MainActor in
                 self?.slotManager.release()
